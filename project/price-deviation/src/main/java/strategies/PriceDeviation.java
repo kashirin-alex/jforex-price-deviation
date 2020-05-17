@@ -36,7 +36,7 @@ public class PriceDeviation {
       jnlp_uri = "https://www.dukascopy.com/client/demo/jclient/jforex.jnlp";
 
     if(System.getProperty("cache_dir") != null)
-		    cache_dir = new File(System.getProperty("cache_dir"));
+        cache_dir = new File(System.getProperty("cache_dir"));
 
     SharedProps.print("args: ");
     for (String s : args) SharedProps.print(s);
@@ -150,7 +150,7 @@ public class PriceDeviation {
       //get the instance of the IClient interface
       final IClient client = ClientFactory.getDefaultInstance(); //new DCClientImpl(); //
 
-			if(cache_dir != null) client.setCacheDirectory(cache_dir);
+      if(cache_dir != null) client.setCacheDirectory(cache_dir);
 
       //set the listener that will receive system events
       client.setSystemListener(new ISystemListener() {
@@ -249,10 +249,10 @@ public class PriceDeviation {
       SharedProps.print("Client isSkipTicks: " + pref.platform().platformSettings().isSkipTicks());
 
       return client;
-		} catch (Exception e) {
+    } catch (Exception e) {
       e.printStackTrace();
       System.out.print(e.getMessage());
-		}
-		return null;
+    }
+    return null;
   }
 }

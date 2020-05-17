@@ -90,7 +90,7 @@ public class AccountManagement implements IStrategy{
         if(counted_inst>0) {
           amount = ((eq-configs.amount_bonus) / (configs.amount_value_fixed*2))
               /(counted_inst*configs.merge_max*configs.num_orders_an_inst);
-				    // -account.getUsedMargin()
+            // -account.getUsedMargin()
         }
       }
       amount /= 1000;
@@ -258,8 +258,8 @@ public class AccountManagement implements IStrategy{
       // double eq_unsettled = account.get();
       ProfitLoss pl = getOrdersProfit();
       double gainbase = configs.get_gainBase();
-			//SharedProps.print("closeOrdersOnProfit: "+eq_unsettled+"-"+orders_profit+">"+gainbase);
-			
+      //SharedProps.print("closeOrdersOnProfit: "+eq_unsettled+"-"+orders_profit+">"+gainbase);
+      
       if(Double.isNaN(eq_unsettled) || pl == null || Double.compare(gainbase, 0) <= 0)
         return;
       Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
@@ -299,10 +299,10 @@ public class AccountManagement implements IStrategy{
       }else if(Double.compare(eq_unsettled, gainbase*configs.gain_close_all_percent) > 0) {
         SharedProps.print("closeOrdersOnProfit CloseAll" +
             " eq_unsettled:"+eq_unsettled+" > gainbase:"+gainbase+"*"+configs.gain_close_all_percent+
-						" c:"+(gain_close_count+1));
+            " c:"+(gain_close_count+1));
         closeOrders("CloseAll");
       }else 
-				gain_close_count=0;
+        gain_close_count=0;
 
       if(dayEndClose && cal.get(Calendar.HOUR_OF_DAY) >= 0 && cal.get(Calendar.MINUTE) >= 0)
         dayEndClose = false;
@@ -313,10 +313,10 @@ public class AccountManagement implements IStrategy{
     }
   }
   private void closeOrders(String close_type) {
-		gain_close_count+=1;
-		if(gain_close_count<configs.gain_close_count)
-			return;
-		gain_close_count=0;
+    gain_close_count+=1;
+    if(gain_close_count<configs.gain_close_count)
+      return;
+    gain_close_count=0;
 
     switch (close_type){
       case "dayEnd":
@@ -324,16 +324,16 @@ public class AccountManagement implements IStrategy{
         break;
     }
 
-		try {
+    try {
       for (IOrder o : engine.getOrders()) {
-				if (o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
-					continue;
-				if (o.getOrderCommand() != OrderCommand.SELL && o.getOrderCommand() != OrderCommand.BUY)
-					continue;
-				SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 5000);
+        if (o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
+          continue;
+        if (o.getOrderCommand() != OrderCommand.SELL && o.getOrderCommand() != OrderCommand.BUY)
+          continue;
+        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 5000);
       }
       Thread.sleep(3000);
-		} catch (Exception e) {
+    } catch (Exception e) {
       SharedProps.print("closeOrders E: "+e.getMessage()+" "+
                         "Thread: "+Thread.currentThread().getName()+" " + e);
     }
@@ -385,7 +385,7 @@ public class AccountManagement implements IStrategy{
               pip_lvl = configs.gain_close_all_pip;
               break;
           }
-					if(Double.isNaN(pip_lvl)) continue;
+          if(Double.isNaN(pip_lvl)) continue;
 
           if (Double.compare(o.getProfitLossInPips(), -pip_lvl) < 0) {
             SharedProps.print("CloseOrders "+close_type+": "
@@ -435,12 +435,12 @@ public class AccountManagement implements IStrategy{
           continue;
         }
         if(Double.compare(p.getStopLossPrice(), 0) == 0){
-					if(Double.compare(p.getProfitLossInUSD(), 0) >= 0)
-						add_profit = p.getProfitLossInUSD();
-						if(Double.isNaN(add_profit)) return null;
+          if(Double.compare(p.getProfitLossInUSD(), 0) >= 0)
+            add_profit = p.getProfitLossInUSD();
+            if(Double.isNaN(add_profit)) return null;
             profit_loss.profit += add_profit;
           continue;
-				}
+        }
 
         inst = p.getInstrument();
         inst_pip_v = inst.getPipValue();
@@ -450,13 +450,13 @@ public class AccountManagement implements IStrategy{
 
         if(cmd == OrderCommand.BUY && open_price < sl_price){
           add_profit = ((getLastTick(inst).getBid()-sl_price)/inst_pip_v)*pip_acc_v;
-					if(Double.isNaN(add_profit)) return null;
+          if(Double.isNaN(add_profit)) return null;
           profit_loss.profit += add_profit;
         }else if (cmd == OrderCommand.SELL && open_price > sl_price){
           add_profit = ((sl_price-getLastTick(inst).getAsk())/inst_pip_v)*pip_acc_v;
-					if(Double.isNaN(add_profit)) return null;
+          if(Double.isNaN(add_profit)) return null;
           profit_loss.profit += add_profit;
-				}
+        }
       }
     } catch (Exception e) {
       SharedProps.print("getOrdersProfit E: "+e.getMessage()+" " +

@@ -168,7 +168,7 @@ public class StrategyConfigs {
   public double tp_step_1st_min = 2.5;
   @Configurable("Take profit 1st step divider of INST min")
   public double tp_step_1st_divider = 2;
-	
+  
   @Configurable("Take profit rest multi of 1st trailing step")
   public double tp_step_rest_1st_plus_gain = 0.10;
 
@@ -324,7 +324,7 @@ public class StrategyConfigs {
           tp_step_1st_divider = Double.valueOf(config[1]);
           SharedProps.print("tp_step_1st_divider set to: "+tp_step_1st_divider);
           break;
-						
+            
         case "tp_step_rest_1st_plus_gain":
           tp_step_rest_1st_plus_gain = Double.valueOf(config[1]);
           SharedProps.print("tp_step_rest_1st_plus_gain set to: "+tp_step_rest_1st_plus_gain);
