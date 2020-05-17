@@ -12,7 +12,10 @@ if [ -z $ACC_NAME ]; then
     ACC_NAME=DEMO_TEST_1;
 fi
 
-mkdir $ACC_NAME;
-cp -r account_template/* $ACC_NAME;
+if [ ! -d $ACC_NAME ]; then
+    mkdir $ACC_NAME;
+    cp -r account_template/* $ACC_NAME;
+fi
+
 cp project/target/price-deviation-1.0-bundled.jar $ACC_NAME/price-deviation.jar;
 

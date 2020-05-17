@@ -9,6 +9,7 @@ ACC_USR=;
 ACC_PWD=;
 
 
+mkdir -p logs;
 # RUN
 nohup java -Dcache_dir=.cache -DUSR=$ACC_USR -DPWD=$ACC_PWD -Djavax.net.ssl.trustStore=../cacerts.jks -Djavax.net.ssl.trustStorePassword=$CA_JKS_PASS -cp price-deviation.jar strategies.PriceDeviation &> logs/out &
 
