@@ -99,7 +99,8 @@ public class AccountManagement implements IStrategy{
             configs.set_amount(SharedProps.round(amount, 6));
             on_acc_ts = SharedProps.get_ts()+10000;
 
-            eq_state.add(
+            if(configs.fms_active)
+                eq_state.add(
                     new FmsSetStatsItem(
                         configs.fms_metric_id, Calendar.getInstance(tz).getTimeInMillis(), eq.longValue()));
         } catch (Exception e) {
