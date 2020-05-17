@@ -5,3 +5,5 @@
 *.iml
 target
 DEMO*
+*.classpath
+*.project
