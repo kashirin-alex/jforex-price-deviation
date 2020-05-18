@@ -3,7 +3,8 @@
 .vscode
 *.jks
 *.iml
-target
-DEMO*
 *.classpath
 *.project
+.settings
+target
+accounts
