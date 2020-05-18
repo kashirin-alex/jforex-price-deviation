@@ -13,6 +13,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class SharedProps {
   public static StrategyConfigs configs = new StrategyConfigs();
 
+  public static AccountManagement acc_man = null;
+
   public static String strategy_dir;
   public static long offline_sleep=0;
   //

@@ -14,12 +14,9 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
-import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.List;
 import java.util.TimeZone;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class AccountManagement implements IStrategy{
 
@@ -32,13 +29,14 @@ public class AccountManagement implements IStrategy{
   
   private IEngine engine;
   private IHistory history;
-  private IContext context;
+  public IContext context;
   private IDataService dataService;
   private IAccount account;
 
   private FmsClient fms_client;
   private FmsSetStatsQueue eq_state_q;
   private TimeZone tz = TimeZone.getTimeZone("UTC");
+  private long on_acc_ts = SharedProps.get_sys_ts();
 
   private int gain_close_count=0;
 
@@ -60,21 +58,21 @@ public class AccountManagement implements IStrategy{
       fms_client.set_pass_phrase(configs.fms_pass_phrase);
       fms_client.set_keep_alive(true);
       fms_client.set_cipher(FmsClient.Ciphers.AES);
-    }
 
-    eq_state_q = fms_client.get_queue(100);
-    eq_state_q.set_callbacks(new FmsSetStatsQueue.FmsSetStatsCallBack() {
-      @Override
-      public void onRspStats(FmsRspSetStats rsp) {
-        SharedProps.print("FmsSetStatsCallBack: "+rsp);
-        SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
-      }
-      @Override
-      public void onQueueStop() {
-        SharedProps.print("FmsSetStatsCallBack onQueueStop");
-        SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
-      }
-    });
+      eq_state_q = fms_client.get_queue(100);
+      eq_state_q.set_callbacks(new FmsSetStatsQueue.FmsSetStatsCallBack() {
+        @Override
+        public void onRspStats(FmsRspSetStats rsp) {
+          SharedProps.print("FmsSetStatsCallBack: "+rsp);
+          SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
+        }
+        @Override
+        public void onQueueStop() {
+          SharedProps.print("FmsSetStatsCallBack onQueueStop");
+          SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
+        }
+      });
+    }
 
     new Thread(new Runnable() {
       @Override
@@ -83,7 +81,6 @@ public class AccountManagement implements IStrategy{
     }).start();
   }
 
-  private long on_acc_ts=SharedProps.get_sys_ts();
   @Override
   public void onAccount(IAccount acc) {
     Double eq = account.getEquity();
@@ -132,6 +129,7 @@ public class AccountManagement implements IStrategy{
     long one_minute_timer = 0;
     long ten_secs_timer = 0;
     while(!stop_run){
+      commit_log();
       try{
         pid_restart=false;
         if(at_hour != Calendar.getInstance(TimeZone.getTimeZone("GMT")).get(Calendar.HOUR_OF_DAY)){
@@ -143,7 +141,6 @@ public class AccountManagement implements IStrategy{
         if(SharedProps.offline_sleep!=0){
           SharedProps.print("bg_tasks sleep: "+SharedProps.offline_sleep);
           Thread.sleep(1000);
-          commit_log();
           Thread.sleep(SharedProps.offline_sleep-1000);
           continue;
         }
@@ -164,12 +161,13 @@ public class AccountManagement implements IStrategy{
         //}
         if(SharedProps.get_sys_ts() - ten_secs_timer > 10000) {
           SharedProps.print("bg_tasks");
-          commit_log();
           ten_secs_timer = SharedProps.get_sys_ts();
         }
         send_mail_status();
       } catch (Exception e) {
-        SharedProps.print("bg_tasks E: "+e.getMessage()+" Thread: "+Thread.currentThread().getName()+" "+e);
+        System.out.print(
+          "bg_tasks E: "+e.getMessage()+
+          " Thread: "+Thread.currentThread().getName()+" "+e);
       }
     }
   }
@@ -534,7 +532,7 @@ public class AccountManagement implements IStrategy{
 
   private String log_file = "";
   private FileWriter log_fd = null;
-  private void commit_log(){
+  private void commit_log() {
     if(SharedProps.log_q.isEmpty()) return;
 
     try {
@@ -555,7 +553,7 @@ public class AccountManagement implements IStrategy{
 
       log_fd.flush();
     }catch (Exception e){
-      System.out.print(e.getMessage());
+      System.out.print("commit_log: " + e.getMessage());
     }
   }
 

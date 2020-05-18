@@ -22,9 +22,12 @@ public class PriceDeviation {
 
   public static void main(String[] args) {
 
-    if(java.lang.System.getProperty("STRATEGY") == null) SharedProps.strategy_dir="";
-    else SharedProps.strategy_dir = java.lang.System.getProperty("STRATEGY");
-    if(!SharedProps.strategy_dir.isEmpty() && !SharedProps.strategy_dir.endsWith("/")) SharedProps.strategy_dir+="/";
+    if(java.lang.System.getProperty("STRATEGY") == null) 
+      SharedProps.strategy_dir="";
+    else 
+      SharedProps.strategy_dir = java.lang.System.getProperty("STRATEGY");
+    if(!SharedProps.strategy_dir.isEmpty() && !SharedProps.strategy_dir.endsWith("/")) 
+      SharedProps.strategy_dir+="/";
 
     StrategyConfigs.instruments = StrategyConfigs.getStrategyInstruments();
 
@@ -59,7 +62,7 @@ public class PriceDeviation {
             try {
               Thread.sleep(1000);
             } catch (Exception e) {
-              SharedProps.print(e.getMessage());
+              System.out.print(e.getMessage());
             }
 
             if(SharedProps.offline_sleep!=0){
@@ -79,14 +82,15 @@ public class PriceDeviation {
                 client = get_client(null);
               }
               if(client==null)continue;
-              SharedProps.print("Starting strategy AccountManagement");
+              System.out.print("Starting strategy AccountManagement\n");
               acc_man = new AccountManagement();
               acc_man.strategyId = client.startStrategy(acc_man);
               acc_man.client = client;
-              SharedProps.print("Started strategy AccountManagement");
+              SharedProps.acc_man = acc_man;
+              System.out.print("Started strategy AccountManagement\n");
 
             }else if (acc_man.pid_restart){
-              SharedProps.print("Strategy restarting AccountManagement");
+              System.out.print("Strategy restarting AccountManagement\n");
               acc_man.stop_run=true;
               try{
                 acc_man.client.stopStrategy(acc_man.strategyId);
@@ -150,7 +154,8 @@ public class PriceDeviation {
       //get the instance of the IClient interface
       final IClient client = ClientFactory.getDefaultInstance(); //new DCClientImpl(); //
 
-      if(cache_dir != null) client.setCacheDirectory(cache_dir);
+      if(cache_dir != null) 
+        client.setCacheDirectory(cache_dir);
 
       //set the listener that will receive system events
       client.setSystemListener(new ISystemListener() {
