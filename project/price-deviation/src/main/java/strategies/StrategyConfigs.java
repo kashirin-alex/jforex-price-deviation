@@ -556,7 +556,7 @@ public class StrategyConfigs {
             SharedProps.print("ema_overlap_lvl_3 set to: "+ema_overlap_lvl_3);
             break;
 
-            case "fms_active":
+          case "fms_active":
             fms_active = config[1].equals("true");
             SharedProps.print("fms_active set to: "+fms_active);
             break;

@@ -915,8 +915,8 @@ public class PriceDeviationInstrument implements IStrategy {
   private double inst_pip_cost(OrderCommand cmd){
     try { 
       double v = SharedProps.acc_man.context.getUtils().convertPipToCurrency(inst, configs.account_currency, 
-        (cmd==OrderCommand.BUY?OfferSide.ASK:OfferSide.BID));
-      return v/(inst_pip*10);
+        (cmd==OrderCommand.BUY?OfferSide.ASK:OfferSide.BID))*10000;
+      return v;
     } catch (Exception e) {
       SharedProps.print("convertPipToCurrency E: "+e.getMessage()+" " +
           "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
