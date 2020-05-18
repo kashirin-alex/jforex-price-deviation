@@ -54,9 +54,6 @@ public class StrategyConfigs {
   @Configurable(value = "Sell order", description = "Place a SELL order (short)")
   public boolean isSellOrder = true;
 
-  @Configurable("trk_metric_equity")
-  public String trk_metric_equity = "";
-
   @Configurable("gain Base")
   public double gainBase = 0;
 
@@ -268,11 +265,6 @@ public class StrategyConfigs {
           case "debug":
             debug = config[1].equals("true");
             SharedProps.print("debug set to: "+debug);
-            break;
-
-          case "trk_metric_equity":
-            trk_metric_equity = config[1];
-            SharedProps.print("trk_metric_equity set to: "+trk_metric_equity);
             break;
 
           case "num_orders_an_inst":

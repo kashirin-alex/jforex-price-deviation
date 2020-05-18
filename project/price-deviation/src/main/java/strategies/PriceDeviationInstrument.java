@@ -66,7 +66,6 @@ public class PriceDeviationInstrument implements IStrategy {
 
     SharedProps.print("onStart start");
     configs = SharedProps.configs;
-    configs.getConfigs();
 
     context = ctx;
     engine = ctx.getEngine();

@@ -44,7 +44,6 @@ public class AccountManagement implements IStrategy{
   public void onStart(IContext ctx) {
     SharedProps.print("onStart start");
     configs = SharedProps.configs;
-    configs.getConfigs();
 
     context = ctx;
     engine = ctx.getEngine();
@@ -53,6 +52,7 @@ public class AccountManagement implements IStrategy{
 
     account = ctx.getAccount();
     configs.account_currency = account.getAccountCurrency();
+
     if(configs.fms_active) {
       fms_client = new FmsClient(configs.fms_id);
       fms_client.set_pass_phrase(configs.fms_pass_phrase);
@@ -89,7 +89,10 @@ public class AccountManagement implements IStrategy{
     if(configs.fms_active)
       eq_state_q.add(
         new FmsSetStatsItem(
-            configs.trk_metric_equity, Calendar.getInstance(tz).getTimeInMillis(), eq.longValue()));
+            configs.fms_metric_id, 
+            Calendar.getInstance(tz).getTimeInMillis(),
+            eq.longValue())
+      );
 
     if(SharedProps.get_ts()-on_acc_ts < 0)
       return;
@@ -125,7 +128,6 @@ public class AccountManagement implements IStrategy{
     setOfflineTime();
     int at_hour = -1;
     long five_minutes_timer = 0;
-    long one_hour_timer = 0;
     long one_minute_timer = 0;
     long ten_secs_timer = 0;
     while(!stop_run){
