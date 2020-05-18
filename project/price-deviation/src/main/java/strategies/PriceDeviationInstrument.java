@@ -147,7 +147,7 @@ public class PriceDeviationInstrument implements IStrategy {
               SharedProps.print(inst_str +" Commission:" +o.getCommission());
           }}
         catch (Exception e){}
-        
+    
         SharedProps.print(inst_str +
               "|Amt: " + configs.get_amount() + "@" + getAmtRatioByAccCurrency() +
               "|BuyAmt: " + SharedProps.round(getAmount(num_buy_orders+1),6) +"@" + num_buy_orders +
@@ -245,7 +245,7 @@ public class PriceDeviationInstrument implements IStrategy {
 
         double trailingStepPip, trailingRestSteps, lastTickBid, lastTickAsk, trailSLprice, trailingStep;
         double o_profit, o_cost, o_swap;
-        
+    
         int num_buy_orders=0;
         int num_sell_orders=0;
         double amt_buy_orders=0;
@@ -320,12 +320,12 @@ public class PriceDeviationInstrument implements IStrategy {
           lastTickAsk = getLastTick().getAsk();
 
           o_swap = o_parse_comment(o.getComment());
-          if(Double.compare(o_swap, 0)>0){
+          if(Double.compare(o_swap, 0)>0) {
             o_swap = o_swap-inst_pip_cost(cmd);
             if(Double.compare(o_swap, 0)<0)
-                if(inst_cur_2.equals(configs.account_currency.getCurrencyCode()))
-                  o_cost += o_swap;
-                else
+              if(inst_cur_2.equals(configs.account_currency.getCurrencyCode()))
+                o_cost += o_swap;
+              else
                 o_cost += o_swap*((((lastTickBid+lastTickAsk)/2)/(inst_pip/10))*0.00001);
           }
           o_swap = (SharedProps.get_ts()-o.getFillTime())/86400000;
@@ -352,7 +352,7 @@ public class PriceDeviationInstrument implements IStrategy {
               && Double.compare(o_profit, trailingRestSteps) >= 0
               && Double.compare(o.getTrailingStep(), 0) != 0)
             trailingStep = trailingRestSteps;
-            
+      
           trailingStepPip = SharedProps.round((trailingRestSteps/inst_pip)*1.2, inst_scale);
 
 
@@ -519,7 +519,7 @@ public class PriceDeviationInstrument implements IStrategy {
           t_amt += orders.get(i).getAmount()*1000;
         }
         cost_price /= t_amt;
-        
+    
         om = engine.mergeOrders(orders.get(0).getOrderCommand().toString()+SharedProps.get_sys_ts(),  
                     o_comment(cost_price), orders.get(0), orders.get(1));
         SharedProps.oBusy.put(om.getId(), SharedProps.get_sys_ts()+2000);
@@ -545,7 +545,7 @@ public class PriceDeviationInstrument implements IStrategy {
         return;
       if(Double.compare(o.getTakeProfitPrice(),0) > 0 && !configs.sl_set && configs.tp_set)
         return;
-      
+  
       double slPrice, tpPrice, tp_pipTMP, sl_pipTMP;
       boolean busy = false;
       if (o.getOrderCommand() == OrderCommand.BUY) {
@@ -769,14 +769,14 @@ public class PriceDeviationInstrument implements IStrategy {
 
       if(configs.amount_balanced_set && SharedProps.amount_balanced_by_margin_reached) {
         if(Double.compare(totalSoldAmount,totalBoughtAmount) > 0) {
-          if(buyOrderCount > 0 && !followUpBuyOrder)
-            currentBuyAmount= totalSoldAmount-totalBoughtAmount;
+          if(!followUpBuyOrder) // buyOrderCount > 0 &&
+            currentBuyAmount = totalSoldAmount-totalBoughtAmount;
           //totalBuyOrder =0;
           //newBuyOrder = true;
         }
         if(Double.compare(totalBoughtAmount,totalSoldAmount) > 0) {
-          if(sellOrderCount > 0 && !followUpSellOrder)
-            currentSellAmount= totalBoughtAmount-totalSoldAmount;
+          if(!followUpSellOrder) // sellOrderCount > 0 &&
+            currentSellAmount = totalBoughtAmount-totalSoldAmount;
           //totalSellOrder =0;
           //newSellOrder = true;
         }
@@ -891,7 +891,7 @@ public class PriceDeviationInstrument implements IStrategy {
         else
           new_order = engine.submitOrder("O"+ts+"_"+trend, inst, cmd, amt,
                                           at, configs.slippage, sl, tp, 0, o_comment(cmd));
-                          
+
         SharedProps.print(inst_str+"-"+cmd.toString()+"" +" amt:"+amt+ " at:"+at+" sl:"+sl+" tp:"+tp+
                           " info:"+inst_trend_info.get(inst_str+"_"+trend));
         inst_trend_info.put(inst_str+"_"+trend, "");
@@ -910,7 +910,7 @@ public class PriceDeviationInstrument implements IStrategy {
       return new_order;
     }
   }
-  
+
   //
   private double inst_pip_cost(OrderCommand cmd){
     try{ 
@@ -934,7 +934,7 @@ public class PriceDeviationInstrument implements IStrategy {
     return pip_cost;
   }
 
-  
+
   //
   private ITick getLastTick() {
     ITick tick;
@@ -1305,7 +1305,7 @@ public class PriceDeviationInstrument implements IStrategy {
       if(!Double.isNaN(oneMinChangeSet) && Double.compare(oneMinChangeSet,0) > 0) {
         double yE = getStdDev()/oneMinChangeSet;
         double xE = ((configs.std_dev_time*configs.period_to_minutes(configs.std_dev_period))/foundTime);
-        
+    
         double timeframe = SharedProps.round(foundTime*(1+yE/xE), 1);
         if(Double.compare(timeframe,0) > 0) {
           inst_tf_ts.put(k, ts);
@@ -1334,7 +1334,7 @@ public class PriceDeviationInstrument implements IStrategy {
 
           inst_pip_dist = SharedProps.round(pips_dist, inst_scale+1);
           inst_pip_dists.put(k_r, inst_pip_dist);
-            
+      
           // foundTime --  chk on smaller time 
           inst_timeframe = timeframe;
           inst_timeframes.put(k_r, inst_timeframe);
@@ -1517,7 +1517,7 @@ public class PriceDeviationInstrument implements IStrategy {
       double pipDistanceSet = inst_pip_dist*configs.price_diff_multiplier;
       
       if(configs.debug)
-         SharedProps.print("getPriceDifference: "+inst_str+"_"+trend+ 
+        SharedProps.print("getPriceDifference: "+inst_str+"_"+trend+
           " "+(price_dif-pipDistanceSet)+" "+price_dif+">"+pipDistanceSet +" @"+inst_timeframe);
       
       if(Double.compare(price_dif, pipDistanceSet) >= 0) {
@@ -1530,7 +1530,7 @@ public class PriceDeviationInstrument implements IStrategy {
               ":"+configs.minutes_to_period_scale(inst_timeframe,200));
         return true;
        }
-       
+      
     } catch (Exception e) {
       if(configs.debug)
         SharedProps.print("getPriceDifference E: "+e.getMessage()+

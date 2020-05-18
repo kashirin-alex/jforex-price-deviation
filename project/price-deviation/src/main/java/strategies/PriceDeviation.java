@@ -36,7 +36,7 @@ public class PriceDeviation {
       jnlp_uri = "https://www.dukascopy.com/client/demo/jclient/jforex.jnlp";
 
     if(System.getProperty("cache_dir") != null)
-        cache_dir = new File(System.getProperty("cache_dir"));
+      cache_dir = new File(System.getProperty("cache_dir"));
 
     SharedProps.print("args: ");
     for (String s : args) SharedProps.print(s);

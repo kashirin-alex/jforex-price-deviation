@@ -4,13 +4,11 @@ package strategies;
 
 import com.dukascopy.api.*;
 import com.dukascopy.api.system.IClient;
-
-import org.apache.commons.lang3.ObjectUtils.Null;
-
 import com.dukascopy.api.IEngine.OrderCommand;
 import direct.thither.lib.api.fms.FmsClient;
 import direct.thither.lib.api.fms.FmsRspSetStats;
 import direct.thither.lib.api.fms.FmsSetStatsItem;
+import direct.thither.lib.api.fms.FmsSetStatsQueue;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,8 +37,7 @@ public class AccountManagement implements IStrategy{
   private IAccount account;
 
   private FmsClient fms_client;
-
-  public static ConcurrentLinkedQueue<FmsSetStatsItem> eq_state = new ConcurrentLinkedQueue<>();
+  private FmsSetStatsQueue eq_state_q;
   private TimeZone tz = TimeZone.getTimeZone("UTC");
 
   private int gain_close_count=0;
@@ -62,7 +59,23 @@ public class AccountManagement implements IStrategy{
       fms_client = new FmsClient(configs.fms_id);
       fms_client.set_pass_phrase(configs.fms_pass_phrase);
       fms_client.set_keep_alive(true);
+      fms_client.set_cipher(FmsClient.Ciphers.AES);
     }
+
+    eq_state_q = fms_client.get_queue(100);
+    eq_state_q.set_callbacks(new FmsSetStatsQueue.FmsSetStatsCallBack() {
+      @Override
+      public void onRspStats(FmsRspSetStats rsp) {
+        SharedProps.print("FmsSetStatsCallBack: "+rsp);
+        SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
+      }
+      @Override
+      public void onQueueStop() {
+        SharedProps.print("FmsSetStatsCallBack onQueueStop");
+        SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
+      }
+    });
+
     new Thread(new Runnable() {
       @Override
       public void run() {bg_tasks();
@@ -73,12 +86,17 @@ public class AccountManagement implements IStrategy{
   private long on_acc_ts=SharedProps.get_sys_ts();
   @Override
   public void onAccount(IAccount acc) {
+    Double eq = account.getEquity();
+    if(Double.isNaN(eq))
+      return;
+    if(configs.fms_active)
+      eq_state_q.add(
+        new FmsSetStatsItem(
+            configs.trk_metric_equity, Calendar.getInstance(tz).getTimeInMillis(), eq.longValue()));
+
     if(SharedProps.get_ts()-on_acc_ts < 0)
       return;
     try {
-      Double eq = account.getEquity();
-      if(Double.isNaN(eq)) return;
-
       SharedProps.amount_balanced_by_margin_reached = Double.compare(
         configs.amount_balanced_from_margin, account.getUseOfLeverage()) < 0;
 
@@ -99,10 +117,6 @@ public class AccountManagement implements IStrategy{
       configs.set_amount(SharedProps.round(amount, 6));
       on_acc_ts = SharedProps.get_ts()+10000;
 
-      if(configs.fms_active)
-        eq_state.add(
-          new FmsSetStatsItem(
-            configs.fms_metric_id, Calendar.getInstance(tz).getTimeInMillis(), eq.longValue()));
     } catch (Exception e) {
       SharedProps.print("onAccount E: "+e.getMessage()+" Thread: " + Thread.currentThread().getName() + " " + e);
     }
@@ -144,7 +158,6 @@ public class AccountManagement implements IStrategy{
           setInstruments();
           freeBusyTPSL();
           five_minutes_timer = SharedProps.get_sys_ts();
-          commit_metrics();
         }
         //if(SharedProps.get_sys_ts() - one_hour_timer > 3600000) {
          // setInstrumentsAmountRatio();
@@ -259,7 +272,7 @@ public class AccountManagement implements IStrategy{
       ProfitLoss pl = getOrdersProfit();
       double gainbase = configs.get_gainBase();
       //SharedProps.print("closeOrdersOnProfit: "+eq_unsettled+"-"+orders_profit+">"+gainbase);
-      
+  
       if(Double.isNaN(eq_unsettled) || pl == null || Double.compare(gainbase, 0) <= 0)
         return;
       Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
@@ -482,19 +495,6 @@ public class AccountManagement implements IStrategy{
   }
 
   //
-  private void commit_metrics(){
-    if(!configs.fms_active || eq_state.isEmpty()) return;
-    try {
-      List<FmsSetStatsItem> items = new ArrayList<>();
-      while (!eq_state.isEmpty()) items.add(eq_state.poll());
-      FmsRspSetStats rsp = fms_client.push_list(items);
-
-      SharedProps.log_q.add(rsp+", "+(rsp.succeed == items.size()));
-    }catch (Exception e){
-      SharedProps.log_q.add("commit_metrics: "+e.getMessage());
-      System.out.print(e.getMessage());
-    }
-  }
 
   private int email_hour_c=0;
   private int email_hour=25;
