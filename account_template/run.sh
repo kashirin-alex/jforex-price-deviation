@@ -15,7 +15,7 @@ nohup java \
  -DUSR=$ACC_USR -DPWD=$ACC_PWD \
  -Djavax.net.ssl.trustStore=../cacerts.jks -Djavax.net.ssl.trustStorePassword=$CA_JKS_PASS -Dcache_dir=../.cache \
  -cp price-deviation.jar strategies.PriceDeviation \
- &> logs/out &;
+ &> logs/out &
 
 sleep 1;
 tail logs/out;
