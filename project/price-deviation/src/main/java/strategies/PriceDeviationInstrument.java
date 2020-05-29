@@ -1383,6 +1383,7 @@ public class PriceDeviationInstrument implements IStrategy {
         }
       }
     }
+    inst_trend_info.put(inst_str+"_"+trend, "");
     return false;
   }
 
@@ -1767,7 +1768,7 @@ public class PriceDeviationInstrument implements IStrategy {
     try {
       if(!configs.emailReports) return;
       context.getUtils().sendMail(
-          "kashirin.alex@gmail.com",
+          "kashirin.alex@gmail.com", // configs.reportEmail
           configs.reportName+" stopped",
           "strategy stopped:" + strategyId);
     } catch (Exception e) {

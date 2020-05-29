@@ -241,6 +241,8 @@ public class AccountManagement implements IStrategy{
       for( Instrument inst : StrategyConfigs.instruments  ) {
         context.setSubscribedInstruments(java.util.Collections.singleton(inst), true);
       }
+      if(configs.account_currency.getCurrencyCode().compareTo("ILS") == 0)
+        context.setSubscribedInstruments(java.util.Collections.singleton(Instrument.USDILS), true);
     } catch (Exception e) {
       SharedProps.print("setInstruments numInst E: "+e.getMessage()+" Thread: " + Thread.currentThread().getName() + " " + e);
     }
