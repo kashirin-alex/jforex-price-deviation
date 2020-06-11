@@ -187,9 +187,11 @@ public class StrategyConfigs {
   public double onlyOneOrderAmount = 20;
 
   @Configurable("email Reports")
-  public boolean emailReports = true;
+  public boolean emailReports = false;
   @Configurable("Report Name")
-  public String reportName = "Dukats";
+  public String reportName = "";
+  @Configurable("Report Email")
+  public String reportEmail = "";
 
   @Configurable("active_price_dif")
   public boolean active_price_dif = true;
@@ -206,7 +208,7 @@ public class StrategyConfigs {
   public double CCIlevel = 100;
 
   @Configurable("without MA")
-  public boolean withoutMA = false;
+  public boolean withoutMA = true;
   @Configurable("MA time divider")
   public double ma_time_divider = 60;
 
@@ -224,11 +226,6 @@ public class StrategyConfigs {
   public double ema_overlap_lvl_3 = 2;
 
 
-  @Configurable("without FibPivot")
-  public boolean withoutFibPivot = false;
-
-
-
   @Configurable("Flow Metric Statistics(FMS)")
   public boolean fms_active = true;
   @Configurable("FMS ID")
@@ -238,8 +235,9 @@ public class StrategyConfigs {
   @Configurable("FMS Passphrase")
   public String fms_pass_phrase = "";
 
-  private static long getConfigsFileChange=0;
-  private static long getConfigsTimer=0;
+  private static long getConfigsFileChange = 0;
+  private static long getConfigsTimer = 0;
+
 
   public synchronized void getConfigs() {
     try {
@@ -499,14 +497,19 @@ public class StrategyConfigs {
             SharedProps.print("price_diff_multiplier set to: "+price_diff_multiplier);
             break;
 
-          case "withoutFibPivot":
-            withoutFibPivot = config[1].equals("true");
-            SharedProps.print("withoutFibPivot set to: "+withoutFibPivot);
-            break;
-
           case "emailReports":
             emailReports = config[1].equals("true");
             SharedProps.print("emailReports set to: "+emailReports);
+            break;
+
+          case "reportName":
+            reportName = config[1];
+            SharedProps.print("reportName set to: "+reportName);
+            break;
+          
+          case "reportEmail":
+            reportEmail = config[1];
+            SharedProps.print("reportEmail set to: "+reportEmail);
             break;
 
           case "withoutCCI":

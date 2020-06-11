@@ -502,7 +502,9 @@ public class AccountManagement implements IStrategy{
   private int email_hour=25;
 
   private void send_mail_status() {
-    if(!configs.emailReports || SharedProps.reports_q.isEmpty()) return;
+    if(!configs.emailReports || 
+        SharedProps.reports_q.isEmpty() ||
+        configs.reportEmail.isEmpty() ) return;
 
     Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
     if(email_hour_c == 100) {
@@ -525,7 +527,11 @@ public class AccountManagement implements IStrategy{
         try{Thread.sleep(300);}catch (Exception e){}
       }
 
-      context.getUtils().sendMail("kashirin.alex@gmail.com", configs.reportName+" acc status", content);
+      context.getUtils().sendMail(
+        configs.reportEmail, 
+        configs.reportName+" acc status", 
+        content
+      );
       SharedProps.print("send_mail_status content: "+content);
       email_hour_c++;
 

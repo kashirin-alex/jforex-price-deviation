@@ -1765,12 +1765,14 @@ public class PriceDeviationInstrument implements IStrategy {
   @Override
   public void onStop()  {
     stop_run = true;
+    if(!configs.emailReports || configs.reportEmail.isEmpty())
+      return;
     try {
-      if(!configs.emailReports) return;
       context.getUtils().sendMail(
-          "kashirin.alex@gmail.com", // configs.reportEmail
-          configs.reportName+" stopped",
-          "strategy stopped:" + strategyId);
+        configs.reportEmail,
+        configs.reportName+" stopped",
+        "strategy stopped:" + strategyId
+      );
     } catch (Exception e) {
       //print("onMessage E: "+e.getMessage()+" Thread: " + Thread.currentThread().getName() + " " + e);
     }
