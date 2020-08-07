@@ -60,6 +60,10 @@ public class StrategyConfigs {
   @Configurable("Gain close required count")
   public int gain_close_count = 5;
 
+  @Configurable("Gain close on over-loss percentage")
+  public double gain_close_overloss_percent = 1.00;
+  
+  /*
   @Configurable("Gain close constant percentage")
   public double gain_close_constant_percent = 1.005;
   @Configurable("Gain close constant percentage")
@@ -92,7 +96,7 @@ public class StrategyConfigs {
   public double gain_close_all_percent = 1.25;
   @Configurable("Gain close all min negative pip")
   public double gain_close_all_pip = 10;
-
+  */
 
   @Configurable("Number of orders an instrument to each side")
   public int num_orders_an_inst = 1;
@@ -356,6 +360,13 @@ public class StrategyConfigs {
             gain_close_count = Integer.valueOf(config[1]);
             SharedProps.print("gain_close_count set to: "+gain_close_count);
             break;
+
+          case "gain_close_overloss_percent":
+            gain_close_overloss_percent = Integer.valueOf(config[1]);
+            SharedProps.print("gain_close_overloss_percent set to: "+gain_close_overloss_percent);
+            break;
+
+          /*  
           case "gain_close_constant_percent":
             gain_close_constant_percent = Double.valueOf(config[1]);
             SharedProps.print("gain_close_constant_percent set to: "+gain_close_constant_percent);
@@ -415,7 +426,7 @@ public class StrategyConfigs {
             gain_close_all_pip = Double.valueOf(config[1]);
             SharedProps.print("gain_close_all_pip set to: "+gain_close_all_pip);
             break;
-
+          */
 
           case "amount_value_fixed":
             amount_value_fixed = Double.valueOf(config[1]);
