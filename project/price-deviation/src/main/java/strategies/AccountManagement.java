@@ -5,10 +5,6 @@ package strategies;
 import com.dukascopy.api.*;
 import com.dukascopy.api.system.IClient;
 import com.dukascopy.api.IEngine.OrderCommand;
-import direct.thither.lib.api.fms.FmsClient;
-import direct.thither.lib.api.fms.FmsRspSetStats;
-import direct.thither.lib.api.fms.FmsSetStatsItem;
-import direct.thither.lib.api.fms.FmsSetStatsQueue;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -33,8 +29,6 @@ public class AccountManagement implements IStrategy{
   private IDataService dataService;
   private IAccount account;
 
-  private FmsClient fms_client;
-  private FmsSetStatsQueue eq_state_q;
   private TimeZone tz = TimeZone.getTimeZone("UTC");
   private long on_acc_ts = SharedProps.get_sys_ts();
 
@@ -53,27 +47,6 @@ public class AccountManagement implements IStrategy{
     account = ctx.getAccount();
     configs.account_currency = account.getAccountCurrency();
 
-    if(configs.fms_active) {
-      fms_client = new FmsClient(configs.fms_id);
-      fms_client.set_pass_phrase(configs.fms_pass_phrase);
-      fms_client.set_keep_alive(true);
-      fms_client.set_cipher(FmsClient.Ciphers.AES);
-
-      eq_state_q = fms_client.get_queue(100);
-      eq_state_q.set_callbacks(new FmsSetStatsQueue.FmsSetStatsCallBack() {
-        @Override
-        public void onRspStats(FmsRspSetStats rsp) {
-          SharedProps.print("FmsSetStatsCallBack: "+rsp);
-          SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
-        }
-        @Override
-        public void onQueueStop() {
-          SharedProps.print("FmsSetStatsCallBack onQueueStop");
-          SharedProps.print("FmsSetStatsCallBack queued: "+eq_state_q.queued());
-        }
-      });
-    }
-
     new Thread(new Runnable() {
       @Override
       public void run() {bg_tasks();
@@ -86,13 +59,6 @@ public class AccountManagement implements IStrategy{
     Double eq = account.getEquity();
     if(Double.isNaN(eq))
       return;
-    if(configs.fms_active)
-      eq_state_q.add(
-        new FmsSetStatsItem(
-            configs.fms_metric_id, 
-            Calendar.getInstance(tz).getTimeInMillis(),
-            eq.longValue())
-      );
 
     if(SharedProps.get_ts()-on_acc_ts < 0)
       return;
@@ -123,10 +89,30 @@ public class AccountManagement implements IStrategy{
     on_acc_ts = SharedProps.get_ts()+5000;
   }
 
+  @Override
+  public void onMessage(IMessage message) {
+    try {
+      switch(message.getType()) {
+        case INSTRUMENT_STATUS: 
+          IInstrumentStatusMessage msg = (IInstrumentStatusMessage) message;
+          Instrument inst = msg.getInstrument();
+          Boolean at = SharedProps.inst_active.get(inst.toString());
+          if(at == null || at != msg.isTradable()) {
+            SharedProps.inst_active.put(inst.toString(), msg.isTradable());
+            SharedProps.print("Changed " + inst.toString() + " isTradable status:" + msg.isTradable());
+          }
+          break;
+        default:
+          SharedProps.print("acc - Message: " + message.toString());
+          break;
+      }
+    } catch (Exception e) {
+      SharedProps.print("onAccount E: "+e.getMessage()+" Thread: " + Thread.currentThread().getName() + " " + e);
+    }
+  }
+
   //
   private void bg_tasks() {
-    setOfflineTime();
-    int at_hour = -1;
     long five_minutes_timer = 0;
     long one_minute_timer = 0;
     long ten_secs_timer = 0;
@@ -134,18 +120,6 @@ public class AccountManagement implements IStrategy{
       commit_log();
       try{
         pid_restart=false;
-        if(at_hour != Calendar.getInstance(TimeZone.getTimeZone("GMT")).get(Calendar.HOUR_OF_DAY)){
-          at_hour = Calendar.getInstance(TimeZone.getTimeZone("GMT")).get(Calendar.HOUR_OF_DAY);
-          SharedProps.print("setOfflineTime: "+Calendar.getInstance(
-              TimeZone.getTimeZone("GMT")).get(Calendar.HOUR_OF_DAY));
-          setOfflineTime();
-        }
-        if(SharedProps.offline_sleep!=0){
-          SharedProps.print("bg_tasks sleep: "+SharedProps.offline_sleep);
-          Thread.sleep(1000);
-          Thread.sleep(SharedProps.offline_sleep-1000);
-          continue;
-        }
         Thread.sleep(5000);
         if(SharedProps.get_sys_ts() - one_minute_timer > 60000) {
           configs.getConfigs();
@@ -167,25 +141,13 @@ public class AccountManagement implements IStrategy{
         }
         send_mail_status();
       } catch (Exception e) {
-        System.out.print(
+        SharedProps.print(
           "bg_tasks E: "+e.getMessage()+
           " Thread: "+Thread.currentThread().getName()+" "+e);
       }
     }
   }
 
-  private void setOfflineTime(){
-    try {
-      Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
-      if(dataService.isOfflineTime(cal.getTimeInMillis()+60000))
-        SharedProps.offline_sleep=(61-cal.get(Calendar.MINUTE))*60*1000;
-      else {
-        SharedProps.offline_sleep = 0;
-        for(Instrument inst :StrategyConfigs.instruments)
-          SharedProps.inst_active.put(inst.toString(), true);
-      }
-    }catch (Exception e){}
-  }
   private void freeBusyTPSL(){
     try {
       for (String k : SharedProps.oBusy.keySet()) {
@@ -283,7 +245,8 @@ public class AccountManagement implements IStrategy{
       eq_unsettled -= configs.amount_bonus;
       double eq = eq_unsettled - pl.profit;
 
-      if(Double.compare(eq - gainbase, Math.abs(pl.loss) * configs.gain_close_overloss_percent) >= 0) {
+      if(Double.compare(eq, gainbase * configs.gain_close_overloss_atleast_percent) >= 0 && 
+         Double.compare(eq - gainbase, Math.abs(pl.loss) * configs.gain_close_overloss_percent) >= 0) {
         SharedProps.print("closeOrdersOnProfit overloss eq=" + eq + " gainbase=" + gainbase +
             " " + (eq - gainbase) + " >= " + (Math.abs(pl.loss) * configs.gain_close_overloss_percent) +
             " c=" + (gain_close_count + 1));
@@ -405,6 +368,7 @@ public class AccountManagement implements IStrategy{
       Instrument inst;
       boolean closing;        
       ITick tick; 
+      double step, inst_pip; 
 
       try {
         for (IOrder o : engine.getOrders()) {
@@ -427,11 +391,18 @@ public class AccountManagement implements IStrategy{
 
           switch(close_type) {
             case "overloss":
-              if(Double.compare(profit_pip, -0.5) >= 0)
+              if(Double.compare(profit_pip, -2.5) >= 0)
                 continue;
               tick = getLastTick(inst);
-              if(tick != null &&
-                 Double.compare(profit_pip, -0.5 - (tick.getBid() - tick.getAsk()) / inst.getPipValue()) > 0)
+              if(tick == null)
+                continue;
+              inst_pip = inst.getPipValue();
+              step = (tick.getAsk() / (inst_pip/10)) * 0.00001;
+              if(step < 1)
+                step = 1/step;
+              step *= 2.5;
+              step += (tick.getBid() - tick.getAsk()) / inst_pip;
+              if(Double.compare(profit_pip, -step) > 0)
                 continue;
                 
               if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
@@ -681,7 +652,7 @@ public class AccountManagement implements IStrategy{
 
       log_fd.flush();
     }catch (Exception e){
-      System.out.print("commit_log: " + e.getMessage());
+      SharedProps.print("commit_log: " + e.getMessage());
     }
   }
 
@@ -689,8 +660,6 @@ public class AccountManagement implements IStrategy{
   public void onBar(Instrument instrument, Period period, IBar askBar, IBar bidBar) {}
   @Override
   public void onTick(Instrument instrument, ITick tick) {}
-  @Override
-  public void onMessage(IMessage message) {}
   @Override
   public void onStop(){
     stop_run = true;

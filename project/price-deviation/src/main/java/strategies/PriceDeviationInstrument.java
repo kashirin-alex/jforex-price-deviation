@@ -108,14 +108,14 @@ public class PriceDeviationInstrument implements IStrategy {
     long ts = SharedProps.get_sys_ts();
     inst_exec_ts = ts+120000;
     while(!stop_run) {
-      if(SharedProps.offline_sleep!=0){
-        SharedProps.print("runInstrument sleep "+inst_str+": "+SharedProps.offline_sleep);
-        try{Thread.sleep(SharedProps.offline_sleep);}catch (Exception e){}
-        continue;
-      }
       try{
+        if(!SharedProps.inst_active.get(inst_str)) {
+          pid_restart = false;
+          Thread.sleep(10000);
+          continue;
+        }
         Thread.sleep((long)(configs.profitable_ratio_chk_ms/(1/configs.profitable_ratio_chg))-1);
-      }catch (Exception e){}
+      }catch (Exception e){ }
       ts = SharedProps.get_sys_ts();
 
 
@@ -160,8 +160,6 @@ public class PriceDeviationInstrument implements IStrategy {
         );
         counter = 0;
       }
-      if(!SharedProps.inst_active.get(inst_str))
-        continue;
       if(ts-inst_exec_ts < 20000)
         continue;
       if(Double.isNaN(inst_timeframe) || Double.compare(inst_timeframe,0) == 0)
@@ -304,15 +302,16 @@ public class PriceDeviationInstrument implements IStrategy {
         }
 
         for( IOrder o : orders) {
-          if(ts-SharedProps.oBusy.get(o.getId()) < 888)
+          if(Double.compare(o.getProfitLossInPips() * inst_pip, step_1st) <= 0 ||
+             ts - SharedProps.oBusy.get(o.getId()) < 888) {
             continue;
+          }
 
           cmd = o.getOrderCommand();
           trailingStep = step_1st;
           if(o.getLabel().contains("Signal:"))
             trailingStep = trailingStep*2;
 
-          o_profit = o.getProfitLossInPips();
           o_cost = 0;
 
           lastTickBid = getLastTick().getBid();
@@ -321,17 +320,20 @@ public class PriceDeviationInstrument implements IStrategy {
           o_swap = o_parse_comment(o.getComment());
           if(Double.compare(o_swap, 0)>0) {
             o_swap = o_swap-inst_pip_cost(cmd);
-            if(Double.compare(o_swap, 0)<0)
+            if(Double.compare(o_swap, 0)<0) {
               if(inst_cur_2.equals(configs.account_currency.getCurrencyCode()))
                 o_cost += o_swap;
               else
                 o_cost += o_swap*((((lastTickBid+lastTickAsk)/2)/(inst_pip/10))*0.00001);
+            }
           }
           o_swap = (SharedProps.get_ts()-o.getFillTime())/86400000;
           if(Double.compare(o_swap, 0)>0)
             o_cost += o_swap; //o_swap*trailingStep;
 
+          o_profit = o.getProfitLossInPips();
           o_cost += (o.getCommission()/(o.getProfitLossInAccountCurrency()/o_profit));
+          o_cost /= (o.getAmount()*1000);
           o_cost += (2.2+(trailingStep/inst_pip)/4);
           if(configs.debug)
             SharedProps.print(inst_str+" o_cost:"+SharedProps.round(o_cost, 2) +
@@ -1518,7 +1520,7 @@ public class PriceDeviationInstrument implements IStrategy {
           break;
       }
 
-      double pipDistanceSet = inst_pip_dist*configs.price_diff_multiplier;
+      double pipDistanceSet = SharedProps.round(inst_pip_dist*configs.price_diff_multiplier, inst_scale+1);
       
       if(configs.debug)
         SharedProps.print("getPriceDifference: "+inst_str+"_"+trend+
@@ -1690,7 +1692,7 @@ public class PriceDeviationInstrument implements IStrategy {
       if(!order.getInstrument().toString().equals(inst_str))
         return;
 
-      switch(message.getType()){
+      switch(message.getType()) {
 
         case ORDER_SUBMIT_OK :
           SharedProps.print("Order submit ok: " + message.getOrder());
@@ -1699,6 +1701,20 @@ public class PriceDeviationInstrument implements IStrategy {
           SharedProps.print("Order submit rejected: " + message.getOrder());
           SharedProps.curr_a_ts.put(inst_cur_1, SharedProps.get_sys_ts()+10000);
           SharedProps.curr_a_ts.put(inst_cur_2, SharedProps.get_sys_ts()+10000);
+          break;
+  
+        case ORDER_CHANGED_OK:
+          SharedProps.print("Order changed ok: " + message.getOrder());
+          break;
+        case ORDER_CHANGED_REJECTED:
+          SharedProps.print("Order change rejected: " + message.getOrder());
+          break;
+
+        case ORDERS_MERGE_OK:
+          SharedProps.print("Orders merged ok: " + message.getOrder());
+          break;
+        case ORDERS_MERGE_REJECTED:
+          SharedProps.print("Orders merge rejected: " + message.getOrder());
           break;
 
         case ORDER_FILL_OK :
@@ -1710,6 +1726,10 @@ public class PriceDeviationInstrument implements IStrategy {
           SharedProps.curr_a_ts.put(inst_cur_2, SharedProps.get_sys_ts()+10000);
           break;
 
+        case STOP_LOSS_LEVEL_CHANGED :
+          SharedProps.print("ST changed ok: " + message.getOrder());
+          break;
+           
         case ORDER_CLOSE_OK :
           SharedProps.print("Order close ok: " + message.getOrder());
 
@@ -1737,7 +1757,13 @@ public class PriceDeviationInstrument implements IStrategy {
         case ORDER_CLOSE_REJECTED :
           SharedProps.print("Order close rejected: " + message.getOrder());
           break;
+      
+        default:
+          SharedProps.print("default msg-event: " + message.getOrder());
+          break;
+          
       }
+
     } catch (Exception e) {
     }
   }
@@ -1745,12 +1771,28 @@ public class PriceDeviationInstrument implements IStrategy {
 
 
   private double getAmount(int num_orders) {
-    if(!configs.amount_start_small)
-      return configs.get_amount();
-
-    if(num_orders==0) num_orders=1;
-    double amt = num_orders*(configs.get_amount()/configs.merge_max)+(num_orders-1)*(configs.get_amount()/configs.merge_max);
-    if (Double.compare(amt, 0.001) < 0) amt = 0.001;
+    double amt;
+    if(configs.amount_start_small) {
+      if(num_orders == 0)
+        num_orders = 1;
+      amt = num_orders*(configs.get_amount()/configs.merge_max)+(num_orders-1)*(configs.get_amount()/configs.merge_max);
+    } else {
+      amt = configs.get_amount();
+    }
+    if (Double.compare(amt, 0.001) < 0)
+      amt = 0.001;
+    /*
+    else if (Double.compare(amt, inst.getMaxTradeAmount()) > 0)
+      amt = inst.getMaxTradeAmount();
+    */
+  
+    /*
+    SharedProps.print(
+      "getAmount " + inst_str + " amt_i=" +amt_i + " incr=" + inst.getTradeAmountIncrement() +
+      " min=" + inst.getMinTradeAmount() + " max=" + inst.getMaxTradeAmount() +
+      " amt=" + SharedProps.round(amt * ( 0.001 * inst.getTradeAmountIncrement() ), 9)
+    );
+    */
     return amt;
     //double amt = SharedProps.round(configs.get_amount()*getAmtRatioByAccCurrency(), 6);
     //return (Double.compare(amt, 0.001000) < 0) ? 0.001 : (Double.compare(amt, 10)>0 ? 10: amt);

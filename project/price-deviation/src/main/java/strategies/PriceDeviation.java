@@ -54,17 +54,9 @@ public class PriceDeviation {
     while(true) {
 
       try {
-        Thread.sleep(1000);
+        Thread.sleep(10000);
       } catch (Exception e) {
-        System.out.print(e.getMessage());
-      }
-
-      if(SharedProps.offline_sleep != 0){
-        SharedProps.print("main sleep: "+(SharedProps.offline_sleep));
-        try{ 
-          Thread.sleep(SharedProps.offline_sleep); 
-        } catch (Exception e) {}
-        continue;
+        SharedProps.print(e.getMessage());
       }
 
       if(System.currentTimeMillis() - strategy_check_ts < 600000) 
@@ -80,20 +72,27 @@ public class PriceDeviation {
           if(client == null)
             continue;
         }
-        System.out.print("Starting strategy AccountManagement\n");
+        SharedProps.print("Starting strategy AccountManagement\n");
         acc_man = new AccountManagement();
         acc_man.strategyId = client.startStrategy(acc_man);
         acc_man.client = client;
         SharedProps.acc_man = acc_man;
-        System.out.print("Started strategy AccountManagement\n");
+        SharedProps.print("Started strategy AccountManagement\n");
+        try {
+          Thread.sleep(3000);
+        } catch (Exception e) {
+          SharedProps.print(e.getMessage());
+        }
 
       } else if(acc_man.pid_restart){
-        System.out.print("Strategy restarting AccountManagement\n");
+        SharedProps.print("Strategy restarting AccountManagement\n");
         acc_man.stop_run=true;
         try{
           acc_man.client.stopStrategy(acc_man.strategyId);
         }catch (Exception e){}
-        acc_man=null;
+        acc_man = null;
+        if(!client.isConnected())
+          client = null;
         continue;
       }
       acc_man.pid_restart = true;

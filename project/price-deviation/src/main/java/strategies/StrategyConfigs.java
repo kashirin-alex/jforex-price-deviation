@@ -19,7 +19,7 @@ public class StrategyConfigs {
   static public Instrument[] instruments;
 
   static public Instrument[] getStrategyInstruments(){
-    System.out.print("|"+SharedProps.strategy_dir+"instruments.conf|\n");
+    SharedProps.print("|"+SharedProps.strategy_dir+"instruments.conf|");
     File file=new File(SharedProps.strategy_dir+"instruments.conf");
     Instrument[] insts = {};
     if(!file.exists()) return insts;
@@ -28,18 +28,19 @@ public class StrategyConfigs {
       BufferedReader reader  = new BufferedReader(fr);
       String line;
       while ((line = reader.readLine()) != null) {
-        System.out.print("|"+line+"|\n");
+        SharedProps.print("|"+line+"|");
 
-        if(!Instrument.contains(line)) continue;
-        insts = Arrays.copyOf(insts, insts.length+1);
         Instrument inst = Instrument.fromString(line);
-        insts[insts.length-1] = inst;
-        SharedProps.inst_active.put(inst.toString(), true);
+        if(inst == null || !Instrument.contains(line))
+          continue;
+        insts = Arrays.copyOf(insts, insts.length + 1);
+        insts[insts.length - 1] = inst;
+        SharedProps.inst_active.put(inst.toString(), false);
       }
       fr.close();
-      System.out.print("num instruments: "+insts.length+"|\n");
+      SharedProps.print("num instruments: "+insts.length+"|");
     } catch (Exception e) {
-      System.out.print(e);
+      SharedProps.print(e);
     }
     return insts;
   }
@@ -58,10 +59,13 @@ public class StrategyConfigs {
   public double gainBase = 0;
 
   @Configurable("Gain close required count")
-  public int gain_close_count = 5;
+  public int gain_close_count = 3;
 
   @Configurable("Gain close on over-loss percentage")
-  public double gain_close_overloss_percent = 1.00;
+  public double gain_close_overloss_percent = 1/3;
+
+  @Configurable("Gain close on over-loss at least percentage value gain")
+  public double gain_close_overloss_atleast_percent = 1.0005;
   
   /*
   @Configurable("Gain close constant percentage")
@@ -229,16 +233,6 @@ public class StrategyConfigs {
   @Configurable("ema_overlap_lvl_3")
   public double ema_overlap_lvl_3 = 2;
 
-
-  @Configurable("Flow Metric Statistics(FMS)")
-  public boolean fms_active = true;
-  @Configurable("FMS ID")
-  public String fms_id = "";
-  @Configurable("FMS Metric ID")
-  public String fms_metric_id = "";
-  @Configurable("FMS Passphrase")
-  public String fms_pass_phrase = "";
-
   private static long getConfigsFileChange = 0;
   private static long getConfigsTimer = 0;
 
@@ -259,10 +253,12 @@ public class StrategyConfigs {
 
       String line;
       while ((line = reader.readLine()) != null) {
-        if(line.startsWith("#"))
+        if(line.length() == 0 || line.startsWith("#"))
           continue;
+        SharedProps.print("setting='" + line + "'");
+
         String[] config = line.split(":");
-        switch(config[0]){
+        switch(config[0]) {
 
           case "debug":
             debug = config[1].equals("true");
@@ -362,9 +358,14 @@ public class StrategyConfigs {
             break;
 
           case "gain_close_overloss_percent":
-            gain_close_overloss_percent = Integer.valueOf(config[1]);
+            gain_close_overloss_percent = Double.valueOf(config[1]);
             SharedProps.print("gain_close_overloss_percent set to: "+gain_close_overloss_percent);
             break;
+          case "gain_close_overloss_atleast_percent":
+            gain_close_overloss_atleast_percent = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_overloss_atleast_percent set to: "+gain_close_overloss_atleast_percent);
+            break;
+            
 
           /*  
           case "gain_close_constant_percent":
@@ -561,25 +562,6 @@ public class StrategyConfigs {
             ema_overlap_lvl_3 = Double.valueOf(config[1]);
             SharedProps.print("ema_overlap_lvl_3 set to: "+ema_overlap_lvl_3);
             break;
-
-          case "fms_active":
-            fms_active = config[1].equals("true");
-            SharedProps.print("fms_active set to: "+fms_active);
-            break;
-          case "fms_id":
-            fms_id = config[1];
-            SharedProps.print("fms_id set to: "+fms_id);
-            break;
-          
-          case "fms_pass_phrase":
-            fms_pass_phrase = config[1];
-            SharedProps.print("fms_pass_phrase set to: "+fms_pass_phrase);
-            break;
-          
-          case "fms_metric_id":
-            fms_metric_id = config[1];
-            SharedProps.print("fms_metric_id set to: "+fms_metric_id);
-            break;
   
           default : //Optional
             //Statements
@@ -588,6 +570,7 @@ public class StrategyConfigs {
       fr.close();
 
     } catch (Exception e) {
+      SharedProps.print("getConfig E: "+e.getMessage()+ " " + e);
     }
   }
 

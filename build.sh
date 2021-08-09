@@ -4,6 +4,7 @@
 mvn -f project/pom.xml -Dmaven.test.skip=true package;
 
 
+echo "setting-up: ${ACC_NAME}"
 
 # MOVE CLASS TO ACC
 

@@ -16,7 +16,6 @@ public class SharedProps {
   public static AccountManagement acc_man = null;
 
   public static String strategy_dir;
-  public static long offline_sleep=0;
   //
   public static String newLine="<br>";
 
