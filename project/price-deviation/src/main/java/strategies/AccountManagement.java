@@ -26,10 +26,8 @@ public class AccountManagement implements IStrategy{
   private IEngine engine;
   private IHistory history;
   public IContext context;
-  private IDataService dataService;
   private IAccount account;
 
-  private TimeZone tz = TimeZone.getTimeZone("UTC");
   private long on_acc_ts = SharedProps.get_sys_ts();
 
   private int gain_close_count=0;
@@ -42,7 +40,6 @@ public class AccountManagement implements IStrategy{
     context = ctx;
     engine = ctx.getEngine();
     history = ctx.getHistory();
-    dataService = ctx.getDataService();
 
     account = ctx.getAccount();
     configs.account_currency = account.getAccountCurrency();
@@ -361,16 +358,18 @@ public class AccountManagement implements IStrategy{
     public CloseOrders(String s) {
       close_type = s;
     }
-
+  
     public CloseOrders call() {
-      double open_price, sl_price, profit_pip;
+      double open_price, sl_price;
       OrderCommand cmd;
       Instrument inst;
       boolean closing;        
       ITick tick; 
-      double step, inst_pip; 
+      double step, atleast, inst_pip; 
 
       try {
+        IOrder o_lossing = null;
+        double o_loss = 0;
         for (IOrder o : engine.getOrders()) {
 
           if(o.getLabel().contains("Signal:") && !configs.manageSignals)
@@ -386,23 +385,32 @@ public class AccountManagement implements IStrategy{
           inst = o.getInstrument();
           open_price = o.getOpenPrice();
           sl_price = o.getStopLossPrice();
-          profit_pip = o.getProfitLossInPips();
           closing = false;
 
           switch(close_type) {
             case "overloss":
-              if(Double.compare(profit_pip, -2.5) >= 0)
-                continue;
               tick = getLastTick(inst);
               if(tick == null)
                 continue;
+
               inst_pip = inst.getPipValue();
+              atleast = (tick.getAsk()/(inst_pip/10))*0.00001;
+              if(Double.compare(atleast, 1) < 0)
+                atleast = 1/atleast;
+              atleast *= configs.tp_step_1st_min;//
+              if(Double.compare(atleast, configs.tp_step_1st_min) < 0)
+                atleast = configs.tp_step_1st_min;
+              if(Double.compare(o.getProfitLossInPips(), -atleast) >= 0)
+                continue;
+
               step = (tick.getAsk() / (inst_pip/10)) * 0.00001;
               if(step < 1)
                 step = 1/step;
               step *= 2.5;
               step += (tick.getBid() - tick.getAsk()) / inst_pip;
-              if(Double.compare(profit_pip, -step) > 0)
+              if(Double.compare(atleast, step) > 0)
+                step = atleast;
+              if(Double.compare(o.getProfitLossInPips(), -step) > 0)
                 continue;
                 
               if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
@@ -413,13 +421,27 @@ public class AccountManagement implements IStrategy{
                 closing = true;
               }
               if(closing) {
-                SharedProps.print("CloseOrders "+close_type+": "
-                  + inst.toString() + " " + cmd + " " + profit_pip);
-                o.close();
+                if(o_lossing == null || o_loss > o.getProfitLossInAccountCurrency()) {
+                  o_loss = o.getProfitLossInAccountCurrency();
+                  o_lossing = o;
+                  SharedProps.print(
+                    "CloseOrders "+close_type+": nominated-order " + 
+                    inst.toString() + " " + cmd + " " + 
+                    o.getProfitLossInPips() + "step=" + step
+                  );
+                }
               }
               break;
           }
         }
+        if(o_lossing == null)
+          return this;
+        SharedProps.print(
+          "CloseOrders "+close_type+": closing-order " + 
+          o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
+          o_lossing.getProfitLossInPips() + " loss=" + o_loss + "/" + o_lossing.getProfitLossInAccountCurrency()
+        );
+        o_lossing.close();
 
         double eq_unsettled = account.getEquity();
         ProfitLoss pl = getOrdersProfit();

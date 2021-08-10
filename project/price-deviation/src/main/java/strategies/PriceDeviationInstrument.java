@@ -339,6 +339,7 @@ public class PriceDeviationInstrument implements IStrategy {
             SharedProps.print(inst_str+" o_cost:"+SharedProps.round(o_cost, 2) +
                               " step:"+SharedProps.round((trailingStep/inst_pip), 2));
           o_cost *= inst_pip;
+          // o_cost *= configs.o_cost_1st_step_multiplier;
           o_profit *= inst_pip;
           if(Double.compare(o_profit-o_cost, trailingStep) <= 0 && !configs.sl_trail){
             if(Double.compare(-(Math.abs(o_profit)+o_cost), -trailingStep*5) < 0)
@@ -1495,7 +1496,7 @@ public class PriceDeviationInstrument implements IStrategy {
     if(Double.compare(inst_pip_dist, 0) == 0)return false;
 
     try{
-      double price_dif = 0;
+      double price_dif = 0.0;
       double base;
       double cur;
       switch (trend){
@@ -1523,8 +1524,10 @@ public class PriceDeviationInstrument implements IStrategy {
       double pipDistanceSet = SharedProps.round(inst_pip_dist*configs.price_diff_multiplier, inst_scale+1);
       
       if(configs.debug)
-        SharedProps.print("getPriceDifference: "+inst_str+"_"+trend+
-          " "+(price_dif-pipDistanceSet)+" "+price_dif+">"+pipDistanceSet +" @"+inst_timeframe);
+        SharedProps.print("getPriceDifference: "+inst_str+"_"+trend +
+          " "+SharedProps.round(price_dif - pipDistanceSet, inst_scale+1) +
+          " "+SharedProps.round(price_dif, inst_scale+1) +
+          ">" + SharedProps.round(pipDistanceSet, inst_scale+1) +" @"+inst_timeframe);
       
       if(Double.compare(price_dif, pipDistanceSet) >= 0) {
         inst_trend_info.put(inst_str+"_"+trend,
@@ -1771,13 +1774,11 @@ public class PriceDeviationInstrument implements IStrategy {
 
 
   private double getAmount(int num_orders) {
-    double amt;
+    double amt = configs.get_amount();
     if(configs.amount_start_small) {
-      if(num_orders == 0)
+      if(num_orders == 1)
         num_orders = 1;
-      amt = num_orders*(configs.get_amount()/configs.merge_max)+(num_orders-1)*(configs.get_amount()/configs.merge_max);
-    } else {
-      amt = configs.get_amount();
+      amt *= (configs.merge_max * num_orders) / ((configs.merge_max * num_orders) + 2);
     }
     if (Double.compare(amt, 0.001) < 0)
       amt = 0.001;
