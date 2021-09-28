@@ -421,13 +421,12 @@ public class AccountManagement implements IStrategy{
                 closing = true;
               }
               if(closing) {
-                if(o_lossing == null || o_loss > o.getProfitLossInAccountCurrency()) {
-                  o_loss = o.getProfitLossInAccountCurrency();
+                if(o_lossing == null || o_loss > o.getProfitLossInPips()) {
+                  o_loss = o.getProfitLossInPips();
                   o_lossing = o;
                   SharedProps.print(
-                    "CloseOrders "+close_type+": nominated-order " + 
-                    inst.toString() + " " + cmd + " " + 
-                    o.getProfitLossInPips() + "step=" + step
+                    "CloseOrders "+close_type+": nominated-order " + inst.toString() + " " + cmd + 
+                    " step=" + step + " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_loss
                   );
                 }
               }
@@ -437,9 +436,8 @@ public class AccountManagement implements IStrategy{
         if(o_lossing == null)
           return this;
         SharedProps.print(
-          "CloseOrders "+close_type+": closing-order " + 
-          o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
-          o_lossing.getProfitLossInPips() + " loss=" + o_loss + "/" + o_lossing.getProfitLossInAccountCurrency()
+          "CloseOrders "+close_type+": closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
+          " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_lossing.getProfitLossInPips()
         );
         o_lossing.close();
 
@@ -552,7 +550,7 @@ public class AccountManagement implements IStrategy{
           continue;
 
         if(Double.compare(p.getProfitLossInPips(), 0) <= 0) {
-          add_loss = p.getProfitLossInUSD();
+          add_loss = p.getProfitLossInAccountCurrency();
           if(Double.isNaN(add_loss)) return null;
           profit_loss.loss += add_loss;
           continue;
@@ -560,8 +558,8 @@ public class AccountManagement implements IStrategy{
 
         sl_price = p.getStopLossPrice();
         if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0){
-          if(Double.compare(p.getProfitLossInUSD(), 0) >= 0) {
-            add_profit = p.getProfitLossInUSD();
+          if(Double.compare(p.getProfitLossInAccountCurrency(), 0) >= 0) {
+            add_profit = p.getProfitLossInAccountCurrency();
             if(Double.isNaN(add_profit)) return null;
             profit_loss.profit += add_profit;
           }
@@ -571,7 +569,7 @@ public class AccountManagement implements IStrategy{
         inst = p.getInstrument();
         inst_pip_v = inst.getPipValue();
         open_price = p.getOpenPrice();
-        pip_acc_v = p.getProfitLossInUSD() / p.getProfitLossInPips();
+        pip_acc_v = p.getProfitLossInAccountCurrency() / p.getProfitLossInPips();
 
         if(cmd == OrderCommand.BUY && open_price < sl_price) {
           add_profit = ((getLastTick(inst).getBid()-sl_price)/inst_pip_v)*pip_acc_v;

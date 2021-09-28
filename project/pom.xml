@@ -33,6 +33,7 @@
 	
     <dependencies>
         <dependency>
+            <!-- https://www.dukascopy.com/client/jforexlib/publicrepo/com/dukascopy/dds2/DDS2-jClient-JForex/ -->
             <groupId>com.dukascopy.dds2</groupId>
             <artifactId>DDS2-jClient-JForex</artifactId>
             <version>3.6.34</version>

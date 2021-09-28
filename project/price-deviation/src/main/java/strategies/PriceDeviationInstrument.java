@@ -929,7 +929,9 @@ public class PriceDeviationInstrument implements IStrategy {
     return o_comment(inst_pip_cost(cmd));
   }
   private String o_comment(double cost){
-    return Double.toString(SharedProps.round(cost, 5));
+    return Double.compare(cost, 0.0) == 0
+            ? ""
+            : Double.toString(SharedProps.round(cost, 5));
   }
   private double o_parse_comment(String c){
     double pip_cost = 0;
