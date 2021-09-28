@@ -280,7 +280,7 @@ public class PriceDeviationInstrument implements IStrategy {
                 sellNegOrders.add(o);
               else if (cmd == OrderCommand.BUY)
                 buyNegOrders.add(o);
-            }else if(Double.compare(o_profit, std_dev/configs.open_followup_std_dev_divider) > 0
+            }else if(Double.compare(o_profit, std_dev/configs.open_followup_std_dev_divider) > 0 // merge_positive
                 && Double.compare(o.getTrailingStep(), 0) != 0) {
               if (cmd == OrderCommand.SELL)
                 sellPosOrders.add(o);

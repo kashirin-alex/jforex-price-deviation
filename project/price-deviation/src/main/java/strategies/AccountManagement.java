@@ -247,7 +247,11 @@ public class AccountManagement implements IStrategy{
         SharedProps.print("closeOrdersOnProfit overloss eq=" + eq + " gainbase=" + gainbase +
             " " + (eq - gainbase) + " >= " + (Math.abs(pl.loss) * configs.gain_close_overloss_percent) +
             " c=" + (gain_close_count + 1));
-        closeOrders("overloss");
+        gain_close_count += 1;
+        if(gain_close_count == configs.gain_close_count) {
+          gain_close_count = 0;
+          closeOrders("overloss");
+        }
       } else {
         gain_close_count = 0;
       }
@@ -257,6 +261,121 @@ public class AccountManagement implements IStrategy{
                         "Thread: "+Thread.currentThread().getName()+" " + e);
     }
   }
+
+  private void closeOrders(String close_type) {
+
+    double open_price, sl_price;
+    OrderCommand cmd;
+    Instrument inst;
+    boolean closing;        
+    ITick tick; 
+    double step, atleast, inst_pip; 
+
+    try {
+      IOrder o_lossing = null;
+      double o_loss = 0;
+      for (IOrder o : engine.getOrders()) {
+
+        if(o.getLabel().contains("Signal:") && !configs.manageSignals)
+          continue;
+
+        if(o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
+          continue;
+
+        cmd = o.getOrderCommand();
+        if(cmd != OrderCommand.SELL && cmd != OrderCommand.BUY)
+          continue;
+
+        inst = o.getInstrument();
+        open_price = o.getOpenPrice();
+        sl_price = o.getStopLossPrice();
+        closing = false;
+
+        switch(close_type) {
+          case "overloss":
+            tick = getLastTick(inst);
+            if(tick == null)
+              continue;
+
+            inst_pip = inst.getPipValue();
+            atleast = (tick.getAsk()/(inst_pip/10))*0.00001;
+            if(Double.compare(atleast, 1) < 0)
+              atleast = 1/atleast;
+            atleast *= configs.tp_step_1st_min;//
+            if(Double.compare(atleast, configs.tp_step_1st_min) < 0)
+              atleast = configs.tp_step_1st_min;
+            if(Double.compare(o.getProfitLossInPips(), -atleast) >= 0)
+              continue;
+
+            step = (tick.getAsk() / (inst_pip/10)) * 0.00001;
+            if(step < 1)
+              step = 1/step;
+            step *= 2.5;
+            step += (tick.getBid() - tick.getAsk()) / inst_pip;
+            if(Double.compare(atleast, step) > 0)
+              step = atleast;
+            if(Double.compare(o.getProfitLossInPips(), -step) > 0)
+              continue;
+              
+            if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
+              closing = true;
+            } else if(cmd == OrderCommand.BUY && open_price > sl_price) {
+              closing = true;
+            } else if (cmd == OrderCommand.SELL && open_price < sl_price) {
+              closing = true;
+            }
+            if(closing) {
+              if(o_lossing == null || o_loss > o.getProfitLossInPips()) {
+                o_loss = o.getProfitLossInPips();
+                o_lossing = o;
+                SharedProps.print(
+                  "CloseOrders "+close_type+": nominated-order " + inst.toString() + " " + cmd + 
+                  " step=" + step + " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_loss
+                );
+              }
+            }
+            break;
+        }
+      }
+      if(o_lossing == null)
+        return;
+      SharedProps.print(
+        "CloseOrders "+close_type+": closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
+        " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_lossing.getProfitLossInPips()
+      );
+      context.executeTask(new CloseOrder(o_lossing));
+
+    } catch (Exception e) {
+      SharedProps.print("CloseOrders call() E: " + e.getMessage() + " " +
+                        "Thread: " + Thread.currentThread().getName() + " " + e);
+    }
+  }
+
+  private class CloseOrder implements Callable<IOrder> {
+    private final IOrder o;
+
+    public CloseOrder(IOrder order) {
+      o = order;
+    }
+    public IOrder call() {
+      try {
+        o.close();
+
+        double eq_unsettled = account.getEquity();
+        ProfitLoss pl = getOrdersProfit();
+        if(!Double.isNaN(eq_unsettled) && pl != null) {
+          double eq = eq_unsettled - pl.profit - configs.amount_bonus;
+          if (Double.compare(eq, configs.get_gainBase()) > 0)
+            configs.set_gainBase(eq);
+        }
+      }catch (Exception e){
+        SharedProps.print("OrderSetSL call() E: "+e.getMessage()+" " +
+            "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
+      }
+      return o;
+    }
+  }
+
 
   /*
   private void closeOrdersOnProfit() {
@@ -321,19 +440,20 @@ public class AccountManagement implements IStrategy{
   }
   */
 
+  /*
   private void closeOrders(String close_type) {
     gain_close_count += 1;
     if(gain_close_count < configs.gain_close_count)
       return;
     gain_close_count = 0;
 
-    /*
+
     switch (close_type){
       case "dayEnd":
         dayEndClose = true;
         break;
     }
-    */
+
 
     try {
       for (IOrder o : engine.getOrders()) {
@@ -455,6 +575,7 @@ public class AccountManagement implements IStrategy{
       return this;
     }
   }
+  */
 
   /*
   private class CloseOrders implements Callable<CloseOrders> {
@@ -527,6 +648,8 @@ public class AccountManagement implements IStrategy{
     }
   }
   */
+
+
 
   //
   class ProfitLoss {
