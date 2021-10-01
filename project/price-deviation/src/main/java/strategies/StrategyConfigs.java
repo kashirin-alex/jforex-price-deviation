@@ -50,58 +50,17 @@ public class StrategyConfigs {
 
   public int slippage = 0;
 
-  @Configurable(value = "Buy order",  description = "Place a BUY order (long)")
-  public boolean isBuyOrder = true;
-  @Configurable(value = "Sell order", description = "Place a SELL order (short)")
-  public boolean isSellOrder = true;
 
   @Configurable("gain Base")
   public double gainBase = 0;
 
   @Configurable("Gain close required count")
   public int gain_close_count = 3;
-
   @Configurable("Gain close on over-loss percentage")
   public double gain_close_overloss_percent = 1/3;
-
   @Configurable("Gain close on over-loss at least percentage value gain")
   public double gain_close_overloss_atleast_percent = 1.0005;
   
-  /*
-  @Configurable("Gain close constant percentage")
-  public double gain_close_constant_percent = 1.005;
-  @Configurable("Gain close constant percentage")
-  public double gain_close_constant_neg_portion = 0.15;
-  @Configurable("Gain close constant min negative pip")
-  public double gain_close_constant_pip = 10;
-  @Configurable("Gain close constant StdDev divider")
-  public double gain_close_constant_std_dev_divider = 20;
-
-  @Configurable("Gain close day end percentage")
-  public double gain_close_day_end_percent = 1.0025;
-  @Configurable("Gain close day end percentage")
-  public double gain_close_day_end_neg_portion = 0.1;
-  @Configurable("Gain close day end min negative pip")
-  public double gain_close_day_end_pip = 10;
-  @Configurable("Gain close day end StdDev divider")
-  public double gain_close_day_end_std_dev_divider = 25;
-
-  @Configurable("Gain close weekend percentage")
-  public double gain_close_wknd_percent = 1.001;
-  @Configurable("Gain close weekend percentage")
-  public double gain_close_wknd_neg_portion = 0.05;
-  @Configurable("Gain close weekend min negative pip")
-  public double gain_close_wknd_pip = 10;
-  @Configurable("Gain close weekend StdDev divider")
-  public double gain_close_wknd_std_dev_divider = 30;
-
-
-  @Configurable("Gain close all percentage")
-  public double gain_close_all_percent = 1.25;
-  @Configurable("Gain close all min negative pip")
-  public double gain_close_all_pip = 10;
-  */
-
   @Configurable("Number of orders an instrument to each side")
   public int num_orders_an_inst = 1;
 
@@ -123,19 +82,13 @@ public class StrategyConfigs {
   public double merge_max = 33;
   @Configurable("Merge distance StdDev divider")
   public double merge_distance_std_dev_divider = 3;
-  @Configurable("Merge to balance order amount StdDev divider")
-  public double merge_to_balance_std_dev_divider = 10;
 
   @Configurable("Open new order at negative distance of StdDev divider")
   public double open_new_std_dev_divider = 5;
-  @Configurable("Open opposite order when profit above StdDev divider")
-  public double open_opposite_std_dev_divider = 1.1;
   @Configurable("Open follow up order at positive distance of StdDev divider")
   public double open_followup_std_dev_divider = 3;
-  @Configurable("Open new order for other side while at profit")
-  public boolean open_new_for_other_side = false;
-  @Configurable("Open new order for related currency after minutes")
-  public long open_new_for_currency_after_mins = 300000;
+  @Configurable("Open new order for related currency after ms")
+  public long open_new_for_currency_after_mins = 0;
 
 
   @Configurable("Profitable ratio min of StdDev on min step")
@@ -154,32 +107,12 @@ public class StrategyConfigs {
   @Configurable("Standard deviation Period")
   public Period std_dev_period = Period.ONE_HOUR;
 
-
-  @Configurable("with Stop loss")
-  public boolean sl_set = false;
-  @Configurable("Stop loss min pip")
-  public double sl_pip = 100;
-  @Configurable("Stop loss StdDev divider")
-  public double sl_std_dev_divider = 2;
-  @Configurable("with Stop loss trail")
-  public boolean sl_trail = false;
-
-  @Configurable("with Take profit")
-  public boolean tp_set = true;
-  @Configurable("Take profit min pip")
-  public double tp_pip = 20;
-  @Configurable("Take profit StdDev divider")
-  public double tp_std_dev_divider = 2;
-  @Configurable("with Take profit trail")
-  public boolean tp_trail = true;
-
-  @Configurable("Take profit min pip 1st trailing step")
-  public double tp_step_1st_min = 2.5;
-  @Configurable("Take profit 1st step divider of INST min")
-  public double tp_step_1st_divider = 2;
-
-  @Configurable("Take profit rest multi of 1st trailing step")
-  public double tp_step_rest_1st_plus_gain = 0.10;
+  @Configurable("trail step min pip")
+  public double trail_step_1st_min = 2.5;
+  @Configurable("trail step 1st divider of min")
+  public double trail_step_1st_divider = 2;
+  @Configurable("trail step rest plus gain muliplier")
+  public double trail_step_rest_plus_gain = 0.10;
 
 
 
@@ -298,35 +231,18 @@ public class StrategyConfigs {
             break;
 
 
-
-          case "tp_set":
-            tp_set = config[1].equals("true");
-            SharedProps.print("tp_set set to: "+tp_set);
+          case "trail_step_1st_min":
+          trail_step_1st_min = Double.valueOf(config[1]);
+            SharedProps.print("trail_step_1st_min set to: "+trail_step_1st_min);
             break;
-          case "tp_pip":
-            tp_pip = Double.valueOf(config[1]);
-            SharedProps.print("tp_pip set to: "+tp_pip);
-            break;
-          case "tp_std_dev_divider":
-            tp_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("tp_std_dev_divider set to: "+tp_std_dev_divider);
-            break;
-          case "tp_trail":
-            tp_trail = config[1].equals("true");
-            SharedProps.print("tp_trail set to: "+tp_trail);
-            break;
-          case "tp_step_1st_min":
-            tp_step_1st_min = Double.valueOf(config[1]);
-            SharedProps.print("tp_step_1st_min set to: "+tp_step_1st_min);
-            break;
-          case "tp_step_1st_divider":
-            tp_step_1st_divider = Double.valueOf(config[1]);
-            SharedProps.print("tp_step_1st_divider set to: "+tp_step_1st_divider);
+          case "trail_step_1st_divider":
+          trail_step_1st_divider = Double.valueOf(config[1]);
+            SharedProps.print("trail_step_1st_divider set to: "+trail_step_1st_divider);
             break;
       
-          case "tp_step_rest_1st_plus_gain":
-            tp_step_rest_1st_plus_gain = Double.valueOf(config[1]);
-            SharedProps.print("tp_step_rest_1st_plus_gain set to: "+tp_step_rest_1st_plus_gain);
+          case "trail_step_rest_plus_gain":
+          trail_step_rest_plus_gain = Double.valueOf(config[1]);
+            SharedProps.print("trail_step_rest_plus_gain set to: "+trail_step_rest_plus_gain);
             break;
 
 
@@ -335,20 +251,12 @@ public class StrategyConfigs {
             open_new_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("open_new_std_dev_divider set to: "+open_new_std_dev_divider);
             break;
-          case "open_opposite_std_dev_divider":
-            open_opposite_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("open_opposite_std_dev_divider set to: "+open_opposite_std_dev_divider);
-            break;
           case "open_followup_std_dev_divider":
             open_followup_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("open_followup_std_dev_divider set to: "+open_followup_std_dev_divider);
             break;
-          case "open_new_for_other_side":
-            open_new_for_other_side = config[1].equals("true");
-            SharedProps.print("open_new_for_other_side set to: "+open_new_for_other_side);
-            break;
           case "open_new_for_currency_after_mins":
-            open_new_for_currency_after_mins = Long.valueOf(config[1])*60*1000;
+            open_new_for_currency_after_mins = Long.valueOf(config[1]);
             SharedProps.print("open_new_for_currency_after_mins set to: "+open_new_for_currency_after_mins);
             break;
 
@@ -365,69 +273,7 @@ public class StrategyConfigs {
             gain_close_overloss_atleast_percent = Double.valueOf(config[1]);
             SharedProps.print("gain_close_overloss_atleast_percent set to: "+gain_close_overloss_atleast_percent);
             break;
-            
-
-          /*  
-          case "gain_close_constant_percent":
-            gain_close_constant_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_constant_percent set to: "+gain_close_constant_percent);
-            break;
-          case "gain_close_constant_neg_portion":
-            gain_close_constant_neg_portion = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_constant_neg_portion set to: "+gain_close_constant_neg_portion);
-            break;
-          case "gain_close_constant_pip":
-            gain_close_constant_pip = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_constant_pip set to: "+gain_close_constant_pip);
-            break;
-          case "gain_close_constant_std_dev_divider":
-            gain_close_constant_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_constant_std_dev_divider set to: "+gain_close_constant_std_dev_divider);
-            break;
-
-          case "gain_close_day_end_percent":
-            gain_close_day_end_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_day_end_percent set to: "+gain_close_day_end_percent);
-            break;
-          case "gain_close_day_end_neg_portion":
-            gain_close_day_end_neg_portion = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_day_end_neg_portion set to: "+gain_close_day_end_neg_portion);
-            break;
-          case "gain_close_day_end_pip":
-            gain_close_day_end_pip = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_day_end_pip set to: "+gain_close_day_end_pip);
-            break;
-          case "gain_close_day_end_std_dev_divider":
-            gain_close_day_end_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_day_end_std_dev_divider set to: "+gain_close_day_end_std_dev_divider);
-            break;
-
-          case "gain_close_wknd_percent":
-            gain_close_wknd_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_wknd_percent set to: "+gain_close_wknd_percent);
-            break;
-          case "gain_close_wknd_neg_portion":
-            gain_close_wknd_neg_portion = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_wknd_percent set to: "+gain_close_wknd_neg_portion);
-            break;
-          case "gain_close_wknd_pip":
-            gain_close_wknd_pip = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_wknd_pip set to: "+gain_close_wknd_pip);
-            break;
-          case "gain_close_wknd_std_dev_divider":
-            gain_close_wknd_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_wknd_std_dev_divider set to: "+gain_close_wknd_std_dev_divider);
-            break;
-
-          case "gain_close_all_percent":
-            gain_close_all_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_all_percent set to: "+gain_close_all_percent);
-            break;
-          case "gain_close_all_pip":
-            gain_close_all_pip = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_all_pip set to: "+gain_close_all_pip);
-            break;
-          */
+      
 
           case "amount_value_fixed":
             amount_value_fixed = Double.valueOf(config[1]);
@@ -441,10 +287,6 @@ public class StrategyConfigs {
           case "merge_distance_std_dev_divider":
             merge_distance_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("merge_distance_std_dev_divider set to: "+merge_distance_std_dev_divider);
-            break;
-          case "merge_to_balance_std_dev_divider":
-            merge_to_balance_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("merge_to_balance_std_dev_divider set to: "+merge_to_balance_std_dev_divider);
             break;
 
           case "merge_max":
@@ -467,26 +309,7 @@ public class StrategyConfigs {
             SharedProps.print("amount_bonus set to: "+amount_bonus);
             break;
 
-
-          case "sl_set":
-            sl_set = config[1].equals("true");
-            SharedProps.print("sl_set set to: "+sl_set);
-            break;
-          case "sl_pip":
-            sl_pip = Double.valueOf(config[1]);
-            SharedProps.print("sl_pip set to: "+sl_pip);
-            break;
-          case "sl_trail":
-            sl_trail = config[1].equals("true");
-            SharedProps.print("sl_trail set to: "+sl_trail);
-            break;
-          case "sl_std_dev_divider":
-            sl_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("sl_std_dev_divider set to: "+sl_std_dev_divider);
-            break;
-
-
-
+          
           case "withoutMA":
             withoutMA = config[1].equals("true");
             SharedProps.print("withoutMA set to: "+withoutMA);
