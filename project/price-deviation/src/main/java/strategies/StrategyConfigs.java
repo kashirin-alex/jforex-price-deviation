@@ -60,6 +60,8 @@ public class StrategyConfigs {
   public double gain_close_overloss_percent = 1/3;
   @Configurable("Gain close on over-loss at least percentage value gain")
   public double gain_close_overloss_atleast_percent = 1.0005;
+  @Configurable("Gain close on over-loss close amount")
+  public double gain_close_overloss_close_ratio = 0.50;
   
   @Configurable("Gain close fixed applied at above leverage")
   public double gain_close_fixed_from_leverage = 15;
@@ -279,6 +281,10 @@ public class StrategyConfigs {
           case "gain_close_overloss_atleast_percent":
             gain_close_overloss_atleast_percent = Double.valueOf(config[1]);
             SharedProps.print("gain_close_overloss_atleast_percent set to: "+gain_close_overloss_atleast_percent);
+            break;
+          case "gain_close_overloss_close_ratio":
+            gain_close_overloss_close_ratio = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_overloss_close_ratio set to: "+gain_close_overloss_close_ratio);
             break;
 
           case "gain_close_fixed_from_leverage":

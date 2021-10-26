@@ -367,7 +367,10 @@ public class AccountManagement implements IStrategy{
     }
     public IOrder call() {
       try {
-        o.close(SharedProps.round(o.getAmount()/2, 6));
+        double amt = SharedProps.round(o.getAmount() * configs.gain_close_overloss_close_ratio, 4);
+        if(Double.compare(amt, 0.001) < 0 || Double.compare(o.getAmount() - amt, 0.001) < 0)
+          amt = 0;
+        o.close(amt);
         apply_gainbase();
 
       } catch (Exception e){
