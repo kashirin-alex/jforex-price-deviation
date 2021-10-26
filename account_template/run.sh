@@ -20,3 +20,5 @@ nohup java \
 
 sleep 1;
 ls -l logs/;
+sleep 3;
+echo `cat status.dat`;

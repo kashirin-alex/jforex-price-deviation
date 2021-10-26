@@ -266,10 +266,11 @@ public class PriceDeviationInstrument implements IStrategy {
             cmd = o.getOrderCommand();
 
             currentAmount = getAmount(cmd == OrderCommand.BUY ? num_buy_orders : num_sell_orders);
-            if(Double.compare(o.getAmount()/currentAmount, configs.merge_max) >= 0) continue;
+            double weight = o.getAmount()/currentAmount;
+            if(Double.compare(weight, configs.merge_max) >= 0) continue;
 
             o_profit = o.getProfitLossInPips();
-            if(Double.compare(o_profit, -std_dev/configs.merge_distance_std_dev_divider) <= 0) {
+            if(Double.compare(o_profit, -std_dev/(configs.merge_distance_std_dev_divider*(configs.merge_max/weight))) <= 0) {
               if (cmd == OrderCommand.SELL)
                 sellNegOrders.add(o);
               else if (cmd == OrderCommand.BUY)
@@ -665,15 +666,19 @@ public class PriceDeviationInstrument implements IStrategy {
       }
 
       if(configs.amount_balanced_set && SharedProps.amount_balanced_by_margin_reached) {
-        if(Double.compare(totalSoldAmount,totalBoughtAmount) > 0) {
-          if(!followUpBuyOrder) // buyOrderCount > 0 &&
+        if(Double.compare(totalSoldAmount - totalBoughtAmount, currentBuyAmount) > 0) {
+          if(!followUpBuyOrder) { // buyOrderCount > 0 &&
             currentBuyAmount = totalSoldAmount-totalBoughtAmount;
+            currentBuyAmount *= configs.amount_balanced_ratio;
+          }
           //totalBuyOrder =0;
           //newBuyOrder = true;
         }
-        if(Double.compare(totalBoughtAmount,totalSoldAmount) > 0) {
-          if(!followUpSellOrder) // sellOrderCount > 0 &&
+        if(Double.compare(totalBoughtAmount - totalSoldAmount, currentSellAmount) > 0) {
+          if(!followUpSellOrder) { // sellOrderCount > 0 &&
             currentSellAmount = totalBoughtAmount-totalSoldAmount;
+            currentSellAmount *= configs.amount_balanced_ratio;
+          }
           //totalSellOrder =0;
           //newSellOrder = true;
         }

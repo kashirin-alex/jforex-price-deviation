@@ -61,6 +61,11 @@ public class StrategyConfigs {
   @Configurable("Gain close on over-loss at least percentage value gain")
   public double gain_close_overloss_atleast_percent = 1.0005;
   
+  @Configurable("Gain close fixed applied at above leverage")
+  public double gain_close_fixed_from_leverage = 15;
+  @Configurable("Gain close fixed percentage above gain-base")
+  public double gain_close_fixed_percent = 1.05;
+
   @Configurable("Number of orders an instrument to each side")
   public int num_orders_an_inst = 1;
 
@@ -74,6 +79,8 @@ public class StrategyConfigs {
   public boolean amount_balanced_set = false;
   @Configurable("Amount Balanced from Margin Percent")
   public double amount_balanced_from_margin = 50;
+  @Configurable("Amount Balanced Ratio-Multiplier")
+  public double amount_balanced_ratio = 1.0;
 
   @Configurable("Bonus amount transparent")
   public double amount_bonus = 0;
@@ -273,7 +280,15 @@ public class StrategyConfigs {
             gain_close_overloss_atleast_percent = Double.valueOf(config[1]);
             SharedProps.print("gain_close_overloss_atleast_percent set to: "+gain_close_overloss_atleast_percent);
             break;
-      
+
+          case "gain_close_fixed_from_leverage":
+            gain_close_fixed_from_leverage = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_fixed_from_leverage set to: "+gain_close_fixed_from_leverage);
+            break;
+          case "gain_close_fixed_percent":
+            gain_close_fixed_percent = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_fixed_percent set to: "+gain_close_fixed_percent);
+            break;
 
           case "amount_value_fixed":
             amount_value_fixed = Double.valueOf(config[1]);
@@ -302,6 +317,10 @@ public class StrategyConfigs {
           case "amount_balanced_from_margin":
             amount_balanced_from_margin = Double.valueOf(config[1]);
             SharedProps.print("amount_balanced_from_margin set to: "+amount_balanced_from_margin);
+            break;
+          case "amount_balanced_ratio":
+          amount_balanced_ratio = Double.valueOf(config[1]);
+            SharedProps.print("amount_balanced_ratio set to: "+amount_balanced_ratio);
             break;
 
           case "amount_bonus":

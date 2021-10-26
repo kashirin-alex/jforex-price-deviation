@@ -6,6 +6,7 @@ import com.dukascopy.api.*;
 import com.dukascopy.api.system.IClient;
 import com.dukascopy.api.IEngine.OrderCommand;
 
+import java.util.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -120,8 +121,9 @@ public class AccountManagement implements IStrategy{
         Thread.sleep(5000);
         if(SharedProps.get_sys_ts() - one_minute_timer > 60000) {
           configs.getConfigs();
-          setGainBase();
-          closeOrdersOnProfit();
+          double gain = configs.get_gainBase();
+          if(Double.isNaN(gain) || Double.compare(gain, 0.0) == 0)
+            setGainBase();
           one_minute_timer = SharedProps.get_sys_ts();
         }
         if(SharedProps.get_sys_ts() - five_minutes_timer > 300000) {
@@ -134,6 +136,7 @@ public class AccountManagement implements IStrategy{
         //}
         if(SharedProps.get_sys_ts() - ten_secs_timer > 10000) {
           SharedProps.print("bg_tasks");
+          closeOrdersOnProfit();
           ten_secs_timer = SharedProps.get_sys_ts();
         }
         send_mail_status();
@@ -226,16 +229,27 @@ public class AccountManagement implements IStrategy{
 
       eq_unsettled -= configs.amount_bonus;
       double eq = eq_unsettled - pl.profit;
-
-      if(Double.compare(eq, gainbase * configs.gain_close_overloss_atleast_percent) >= 0 && 
-         Double.compare(eq - gainbase, Math.abs(pl.loss) * configs.gain_close_overloss_percent) >= 0) {
+      if(Double.compare(account.getUseOfLeverage(), configs.gain_close_fixed_from_leverage) >= 0) {
+        if(Double.compare(eq, gainbase * configs.gain_close_fixed_percent) >= 0) {
+          gain_close_count += 1;
+          SharedProps.print("closeOrdersOnProfit fixed_leverage gainbase=" + gainbase +
+          " " + account.getUseOfLeverage() + ">=" + configs.gain_close_fixed_from_leverage +
+          " " + eq +" >= " + (gainbase * configs.gain_close_fixed_percent) +
+          " c=" + gain_close_count);
+          if(gain_close_count == configs.gain_close_count) {
+            gain_close_count = 0;
+            closeOrders_fixed_leverage();
+          }
+        }
+      } else if(Double.compare(eq, gainbase * configs.gain_close_overloss_atleast_percent) >= 0 && 
+                Double.compare(eq - gainbase, Math.abs(pl.loss) * configs.gain_close_overloss_percent) >= 0) {
+        gain_close_count += 1;
         SharedProps.print("closeOrdersOnProfit overloss eq=" + eq + " gainbase=" + gainbase +
             " " + (eq - gainbase) + " >= " + (Math.abs(pl.loss) * configs.gain_close_overloss_percent) +
-            " c=" + (gain_close_count + 1));
-        gain_close_count += 1;
+            " c=" + gain_close_count);
         if(gain_close_count == configs.gain_close_count) {
           gain_close_count = 0;
-          closeOrders("overloss");
+          closeOrder_overloss();
         }
       } else {
         gain_close_count = 0;
@@ -247,7 +261,19 @@ public class AccountManagement implements IStrategy{
     }
   }
 
-  private void closeOrders(String close_type) {
+  private void apply_gainbase() {
+    double eq_unsettled = account.getEquity();
+    ProfitLoss pl = getOrdersProfit();
+    if(!Double.isNaN(eq_unsettled) && pl != null) {
+      double eq = eq_unsettled - pl.profit - configs.amount_bonus;
+      if (Double.compare(eq, configs.get_gainBase()) > 0)
+        configs.set_gainBase(eq);
+    }
+    setGainBase();
+  }
+
+  /// OVERLOSS CLOSE
+  private void closeOrder_overloss() {
 
     double open_price, sl_price;
     OrderCommand cmd;
@@ -276,62 +302,59 @@ public class AccountManagement implements IStrategy{
         sl_price = o.getStopLossPrice();
         closing = false;
 
-        switch(close_type) {
-          case "overloss":
-            tick = getLastTick(inst);
-            if(tick == null)
-              continue;
+        tick = getLastTick(inst);
+        if(tick == null)
+          continue;
 
-            inst_pip = inst.getPipValue();
-            atleast = (tick.getAsk()/(inst_pip/10))*0.00001;
-            if(Double.compare(atleast, 1) < 0)
-              atleast = 1/atleast;
-            atleast *= configs.trail_step_1st_min;//
-            if(Double.compare(atleast, configs.trail_step_1st_min) < 0)
-              atleast = configs.trail_step_1st_min;
-            if(Double.compare(o.getProfitLossInPips(), -atleast) >= 0)
-              continue;
+        inst_pip = inst.getPipValue();
+        atleast = (tick.getAsk()/(inst_pip/10))*0.00001;
+        if(Double.compare(atleast, 1) < 0)
+          atleast = 1/atleast;
+        atleast *= configs.trail_step_1st_min;//
+        if(Double.compare(atleast, configs.trail_step_1st_min) < 0)
+          atleast = configs.trail_step_1st_min;
+        if(Double.compare(o.getProfitLossInPips(), -atleast) >= 0)
+          continue;
 
-            step = (tick.getAsk() / (inst_pip/10)) * 0.00001;
-            if(step < 1)
-              step = 1/step;
-            step *= 2.5;
-            step += (tick.getBid() - tick.getAsk()) / inst_pip;
-            if(Double.compare(atleast, step) > 0)
-              step = atleast;
-            if(Double.compare(o.getProfitLossInPips(), -step) > 0)
-              continue;
+        step = (tick.getAsk() / (inst_pip/10)) * 0.00001;
+        if(step < 1)
+          step = 1/step;
+        step *= 2.5;
+        step += (tick.getBid() - tick.getAsk()) / inst_pip;
+        if(Double.compare(atleast, step) > 0)
+          step = atleast;
+        if(Double.compare(o.getProfitLossInPips(), -step) > 0)
+          continue;
               
-            if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
-              closing = true;
-            } else if(cmd == OrderCommand.BUY && open_price > sl_price) {
-              closing = true;
-            } else if (cmd == OrderCommand.SELL && open_price < sl_price) {
-              closing = true;
-            }
-            if(closing) {
-              if(o_lossing == null || o_loss > o.getProfitLossInPips()) {
-                o_loss = o.getProfitLossInPips();
-                o_lossing = o;
-                SharedProps.print(
-                  "CloseOrders "+close_type+": nominated-order " + inst.toString() + " " + cmd + 
-                  " step=" + step + " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_loss
-                );
-              }
-            }
-            break;
+        if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
+          closing = true;
+        } else if(cmd == OrderCommand.BUY && open_price > sl_price) {
+          closing = true;
+        } else if (cmd == OrderCommand.SELL && open_price < sl_price) {
+          closing = true;
+        }
+        if(closing) {
+          if(o_lossing == null || o_loss > o.getProfitLossInAccountCurrency()) {
+            o_loss = o.getProfitLossInAccountCurrency();
+            o_lossing = o;
+            SharedProps.print(
+              "closeOrder_overloss: nominated-order " + inst.toString() + " " + cmd + 
+              " step=" + step +
+              " loss=" + o_lossing.getProfitLossInUSD() + "/" + o_loss + "/" + o.getProfitLossInPips()
+            );
+          }
         }
       }
       if(o_lossing == null)
         return;
       SharedProps.print(
-        "CloseOrders "+close_type+": closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
-        " loss=" + o_lossing.getProfitLossInAccountCurrency() + "/" + o_lossing.getProfitLossInPips()
+        "closeOrder_overloss: closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
+        " loss=" + o_lossing.getProfitLossInUSD() + "/" + o_loss + "/" + "/" + o_lossing.getProfitLossInPips()
       );
       context.executeTask(new CloseOrder(o_lossing));
 
     } catch (Exception e) {
-      SharedProps.print("CloseOrders call() E: " + e.getMessage() + " " +
+      SharedProps.print("closeOrder_overloss exec() E: " + e.getMessage() + " " +
                         "Thread: " + Thread.currentThread().getName() + " " + e);
     }
   }
@@ -344,20 +367,72 @@ public class AccountManagement implements IStrategy{
     }
     public IOrder call() {
       try {
-        o.close();
+        o.close(SharedProps.round(o.getAmount()/2, 6));
+        apply_gainbase();
 
-        double eq_unsettled = account.getEquity();
-        ProfitLoss pl = getOrdersProfit();
-        if(!Double.isNaN(eq_unsettled) && pl != null) {
-          double eq = eq_unsettled - pl.profit - configs.amount_bonus;
-          if (Double.compare(eq, configs.get_gainBase()) > 0)
-            configs.set_gainBase(eq);
-        }
-      }catch (Exception e){
-        SharedProps.print("OrderSetSL call() E: "+e.getMessage()+" " +
+      } catch (Exception e){
+        SharedProps.print("closeOrder_overloss call() E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
       }
       return o;
+    }
+  }
+
+
+  /// FIXED AT LEVERAGE CLOSE
+  private void closeOrders_fixed_leverage() {
+    double sl_price;
+    List<IOrder> orders = new ArrayList<>();
+    try {
+      for (IOrder o : engine.getOrders()) {
+
+        if(!configs.manageSignals && o.getLabel().contains("Signal:"))
+          continue;
+        if(o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
+          continue;
+        if(o.getOrderCommand() != OrderCommand.SELL && o.getOrderCommand() != OrderCommand.BUY)
+          continue;
+
+        sl_price = o.getStopLossPrice();
+        if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
+          orders.add(o);
+        }
+      }
+      if(orders.size() > 0) {
+        SharedProps.print(
+          "closeOrders_fixed_leverage: closing-orders= " + orders.size());
+        context.executeTask(new CloseOrders(orders));
+      }
+    } catch (Exception e) {
+      SharedProps.print("closeOrders_fixed_leverage exec() E: " + e.getMessage() + " " +
+                        "Thread: " + Thread.currentThread().getName() + " " + e);
+    }
+  }
+
+  private class CloseOrders implements Callable<IOrder> {
+    private final List<IOrder> closing_orders;
+
+    public CloseOrders(List<IOrder> orders) {
+      closing_orders = orders;
+    }
+    public IOrder call() {
+      try {
+        for (IOrder o : closing_orders) {
+          try { 
+            o.close();
+          } catch (Exception e) {
+            SharedProps.print("closeOrders_fixed_leverage call() E: "+e.getMessage()+" " +
+              "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
+          }
+        }
+        apply_gainbase();
+
+      } catch (Exception e){
+        SharedProps.print("closeOrders_fixed_leverage call() E: "+e.getMessage()+" " +
+            "Thread: " + Thread.currentThread().getName() + " " + e +
+            " orders=" + closing_orders.size());
+      }
+      return null;
     }
   }
 
