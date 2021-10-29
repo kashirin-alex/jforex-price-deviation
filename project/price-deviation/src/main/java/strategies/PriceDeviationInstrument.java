@@ -227,12 +227,8 @@ public class PriceDeviationInstrument implements IStrategy {
     try {
 
       List<IOrder> orders = new ArrayList<>();
-      List<IOrder> buyOrders = new ArrayList<>();
-      List<IOrder> sellOrders = new ArrayList<>();
-      List<IOrder> buyPosOrders = new ArrayList<>();
-      List<IOrder> sellPosOrders = new ArrayList<>();
-      List<IOrder> buyNegOrders = new ArrayList<>();
-      List<IOrder> sellNegOrders = new ArrayList<>();
+      List<IOrder> mergeBuyOrders = new ArrayList<>();
+      List<IOrder> mergeSellOrders = new ArrayList<>();
 
       double currentAmount;
       OrderCommand cmd;
@@ -259,39 +255,105 @@ public class PriceDeviationInstrument implements IStrategy {
           if (!SharedProps.oBusy.containsKey(o.getId()))
             SharedProps.oBusy.put(o.getId(), ts);
         }
+
         double step_1st = getFirstStep();
+        double step_1st_pip = step_1st/inst_pip;
         double std_dev = getStdDevPip();
-        if(inst_init && !Double.isNaN(std_dev)) {
+
+        if(inst_init) {
           for( IOrder o : orders) {
             cmd = o.getOrderCommand();
+            if (cmd == OrderCommand.BUY) {
+              mergeBuyOrders.add(o);
+            }else if (cmd == OrderCommand.SELL) {
+              mergeSellOrders.add(o);
+            }
+          }
+          double require_pip = step_1st_pip * configs.merge_followup_step_muliplier;
+          
+          if(mergeBuyOrders.size() > 1) {
+            mergeBuyOrders.sort(new Comparator<IOrder>() {
+              @Override
+              public int compare(IOrder lhs, IOrder rhs) {
+                return lhs.getProfitLossInPips() > rhs.getProfitLossInPips() ? -1 : 1;
+              }
+            });
+            double pip_buy = 0, amt_buy = 0;
+            int num = 0;
+            o_cost = minFirstStepByInst+(getOffersDifference()/inst_pip);
+            for( IOrder o : mergeBuyOrders) {
+              ++num;
+              double amt = o.getAmount()*1000;
+              amt_buy += amt;
+              pip_buy += o.getProfitLossInPips() * amt;
+              if(num < 2)
+                continue;
+              if(Double.compare((pip_buy / amt_buy) * (1-configs.trail_step_rest_plus_gain), require_pip) < 0) {
+                mergeBuyOrders.clear();
+              } else if(mergeBuyOrders.size() > 2) {
+                mergeBuyOrders = mergeBuyOrders.subList(0, 2);
+              }
+              break;
+            }
+          }
 
+          if(mergeSellOrders.size() > 1) {
+            mergeSellOrders.sort(new Comparator<IOrder>() {
+              @Override
+              public int compare(IOrder lhs, IOrder rhs) {
+                return lhs.getProfitLossInPips() > rhs.getProfitLossInPips() ? -1 : 1;
+              }
+            });
+            double pip_sell = 0, amt_sell = 0;
+            int num = 0;
+            o_cost = minFirstStepByInst+(getOffersDifference()/inst_pip);
+            for( IOrder o : mergeSellOrders) {
+              ++num;
+              double amt = o.getAmount()*1000;
+              amt_sell += amt;
+              pip_sell += o.getProfitLossInPips() * amt;
+              if(num < 2)
+                continue;
+              if(Double.compare((pip_sell / amt_sell) * (1-configs.trail_step_rest_plus_gain), require_pip) < 0) {
+                mergeSellOrders.clear();
+              } else if(mergeSellOrders.size() > 2) {
+                mergeSellOrders = mergeSellOrders.subList(0, 2);
+              }
+              break;
+            }
+          }
+  
+          if(mergeSellOrders.size() >= 2 || mergeBuyOrders.size() >= 2) {
+            orders.clear();
+          } else {
+            mergeBuyOrders.clear();
+            mergeSellOrders.clear();
+          }
+        }
+
+        if(inst_init && !Double.isNaN(std_dev) && !orders.isEmpty()) {
+          for( IOrder o : orders) {
+            cmd = o.getOrderCommand();
             currentAmount = getAmount(cmd == OrderCommand.BUY ? num_buy_orders : num_sell_orders);
             double weight = o.getAmount()/currentAmount;
-            if(Double.compare(weight, configs.merge_max) >= 0) continue;
-
-            o_profit = o.getProfitLossInPips();
-            if(Double.compare(o_profit, -std_dev/(configs.merge_distance_std_dev_divider*(configs.merge_max/weight))) <= 0) {
-              if (cmd == OrderCommand.SELL)
-                sellNegOrders.add(o);
-              else if (cmd == OrderCommand.BUY)
-                buyNegOrders.add(o);
-            }else if(Double.compare(o_profit, std_dev/configs.open_followup_std_dev_divider) > 0
-                     && Double.compare(o.getTrailingStep(), 0) != 0) {
-              if (cmd == OrderCommand.SELL)
-                sellPosOrders.add(o);
-              else if (cmd == OrderCommand.BUY)
-                buyPosOrders.add(o);
+            if(Double.compare(weight, configs.merge_max) < 0) {
+              if(Double.compare(o.getProfitLossInPips(), -std_dev/(configs.merge_distance_std_dev_divider*(configs.merge_max/weight))) <= 0) {
+                if (cmd == OrderCommand.SELL)
+                  mergeSellOrders.add(o);
+                else if (cmd == OrderCommand.BUY)
+                  mergeBuyOrders.add(o);
+              }
             }
-            if(sellNegOrders.size()>=2) sellOrders = sellNegOrders;
-            else if(sellPosOrders.size()>=2) sellOrders = sellPosOrders;
-            if(buyNegOrders.size()>=2) buyOrders = buyNegOrders;
-            else if(buyPosOrders.size()>=2) buyOrders = buyPosOrders;
           }
+          if(mergeSellOrders.size() < 2)
+            mergeSellOrders.clear();
+          if(mergeBuyOrders.size() < 2)
+            mergeBuyOrders.clear();
         }
 
         for( IOrder o : orders) {
           if(Double.compare(o.getProfitLossInPips() * inst_pip, step_1st) <= 0 ||
-             ts - SharedProps.oBusy.get(o.getId()) < 888) {
+             ts - SharedProps.oBusy.get(o.getId()) < 500) {
             continue;
           }
 
@@ -341,7 +403,7 @@ public class PriceDeviationInstrument implements IStrategy {
           trailingStepPip = SharedProps.round((trailingRestSteps/inst_pip)*1.2, inst_scale);
 
 
-          if (cmd == OrderCommand.BUY && buyOrders.size() < 2) {
+          if (cmd == OrderCommand.BUY) {
             trailSLprice = lastTickBid - trailingStep - (lastTickAsk - lastTickBid);
             trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
@@ -352,7 +414,7 @@ public class PriceDeviationInstrument implements IStrategy {
               }
             }
 
-          } else if (cmd == OrderCommand.SELL && sellOrders.size() < 2) {
+          } else if (cmd == OrderCommand.SELL) {
             trailSLprice = lastTickAsk + trailingStep + (lastTickAsk - lastTickBid);
             trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
@@ -369,35 +431,39 @@ public class PriceDeviationInstrument implements IStrategy {
 
       ////
       boolean merge = true;
-      if(buyOrders.size() >= 2) {
-        for(IOrder o: buyOrders){
-          if(ts < SharedProps.oBusy.get(o.getId())){
+      if(mergeBuyOrders.size() >= 2) {
+        for(IOrder o: mergeBuyOrders){
+          if(ts + 100 < SharedProps.oBusy.get(o.getId())){
             merge = false;
             break;
           }
           if(Double.compare(o.getStopLossPrice(),0) > 0){
             executeOrderSetSL(o, 0);
-            SharedProps.oBusy.put(o.getId(), ts+10000);
+            SharedProps.oBusy.put(o.getId(), ts + 700);
             merge = false;
           }
         }
-        if(merge) executeMergeOrders(buyOrders);
+        if(merge) {
+          executeMergeOrders(mergeBuyOrders);
+        }
       }
 
       merge = true;
-      if(sellOrders.size() >= 2) {
-        for(IOrder o: sellOrders){
-          if(ts < SharedProps.oBusy.get(o.getId())){
+      if(mergeSellOrders.size() >= 2) {
+        for(IOrder o: mergeSellOrders){
+          if(ts + 100 < SharedProps.oBusy.get(o.getId())){
             merge = false;
             break;
           }
           if(Double.compare(o.getStopLossPrice(),0) > 0){
             executeOrderSetSL(o, 0);
-            SharedProps.oBusy.put(o.getId(), ts+10000);
+            SharedProps.oBusy.put(o.getId(), ts + 700);
             merge = false;
           }
         }
-        if(merge) executeMergeOrders(sellOrders);
+        if(merge) {
+          executeMergeOrders(mergeSellOrders);
+        }
       }
 
     } catch (Exception e) {
@@ -446,7 +512,7 @@ public class PriceDeviationInstrument implements IStrategy {
           if (Double.compare(o.getTakeProfitPrice(), 0) != 0 && Double.compare(o.getOpenPrice(), trail_price) > 0)
             o.setTakeProfitPrice(0);
         }
-        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 1000);
+        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 700);
       }catch (Exception e){
         SharedProps.print("TrailingOrder call() E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
@@ -485,7 +551,7 @@ public class PriceDeviationInstrument implements IStrategy {
     
         om = engine.mergeOrders(orders.get(0).getOrderCommand().toString()+SharedProps.get_sys_ts(),  
                     o_comment(cost_price), orders.get(0), orders.get(1));
-        SharedProps.oBusy.put(om.getId(), SharedProps.get_sys_ts()+2000);
+        SharedProps.oBusy.put(om.getId(), SharedProps.get_sys_ts() + 500);
 
       }catch (Exception e){
         SharedProps.print("MergeOrders call() E: "+e.getMessage()+" " +
@@ -560,9 +626,11 @@ public class PriceDeviationInstrument implements IStrategy {
   
   //
   private void executeInstrument(long ts, double std_dev) {
-    try{
+    try {
       if(configs.onlyOneOrder && engine.getOrders().size() > 0)return;
 
+      int actualBuyOrder = 0;
+      int actualSellOrder = 0;
       int totalBuyOrder = 0;
       int totalSellOrder = 0;
       int buyOrderCount = 0;
@@ -579,6 +647,7 @@ public class PriceDeviationInstrument implements IStrategy {
       double totalBoughtAmount=0;
       OrderCommand cmd;
       double o_profit, o_cost;
+      double step_1st_pip = getFirstStep()/inst_pip;
 
       for( IOrder o : engine.getOrders(inst)) {
         if(o.getLabel().contains("Signal:")) continue;
@@ -596,15 +665,17 @@ public class PriceDeviationInstrument implements IStrategy {
           if(cmd == OrderCommand.PLACE_BID) { totalBuyOrder ++; newBuyOrder = false;}
           if (cmd == OrderCommand.BUY) {
             buyOrderCount++;
+            actualBuyOrder++;
 
             totalBoughtAmount = totalBoughtAmount + o.getAmount();
 
-            if(Double.compare(std_dev/configs.open_new_std_dev_divider, Math.abs(o_profit)) > 0 )
+            double weight = o.getAmount()/getAmount(1);
+            if(Double.compare(std_dev/(configs.open_new_std_dev_divider*(configs.merge_max/weight)), Math.abs(o_profit)) > 0 )
               newBuyOrder = false;
 
-            if(Double.compare(o_profit+o_cost, 0) > 0) {
-              if(Double.compare(o.getTrailingStep(), 0) > 0
-                && Double.compare(o_profit-o_cost, std_dev/configs.open_followup_std_dev_divider) > 0) {
+              if(Double.compare(o_profit+o_cost, 0) > 0) {
+               if(Double.compare(o.getTrailingStep(), 0) > 0 && Double.compare(
+                  (o_profit * (1 - configs.trail_step_rest_plus_gain) - o_cost) / step_1st_pip, configs.open_followup_step_muliplier) > 0) {
                 totalBuyOrder --;
                 buyOrderCount --;
                 newBuyOrder = true;
@@ -615,21 +686,23 @@ public class PriceDeviationInstrument implements IStrategy {
           }
           if(ts-o.getFillTime() < 10000) { newBuyOrder = false;}
 
-        }else if(cmd == OrderCommand.SELL || cmd == OrderCommand.PLACE_OFFER
+      }else if(cmd == OrderCommand.SELL || cmd == OrderCommand.PLACE_OFFER
             || cmd == OrderCommand.SELLLIMIT || cmd == OrderCommand.SELLSTOP) {
           totalSellOrder ++;
           if(cmd == OrderCommand.PLACE_OFFER) {  totalSellOrder ++; newSellOrder = false;}
           if(cmd == OrderCommand.SELL) {
             sellOrderCount++;
+            actualSellOrder++;
 
             totalSoldAmount = totalSoldAmount + o.getAmount();
 
-            if(Double.compare(std_dev/configs.open_new_std_dev_divider, Math.abs(o_profit)) > 0)
+            double weight = o.getAmount()/getAmount(1);
+            if(Double.compare(std_dev/(configs.open_new_std_dev_divider*(configs.merge_max/weight)), Math.abs(o_profit)) > 0 )
               newSellOrder = false;
 
-            if(Double.compare(o_profit+o_cost, 0) > 0) {
-              if(Double.compare(o.getTrailingStep(), 0) > 0
-                && Double.compare(o_profit-o_cost, std_dev/configs.open_followup_std_dev_divider) > 0) {
+              if(Double.compare(o_profit+o_cost, 0) > 0) {
+                if(Double.compare(o.getTrailingStep(), 0) > 0 && Double.compare(
+                  (o_profit * (1 - configs.trail_step_rest_plus_gain) - o_cost) / step_1st_pip, configs.open_followup_step_muliplier) > 0) {
                 totalSellOrder --;
                 sellOrderCount --;
                 newSellOrder = true;
@@ -642,29 +715,31 @@ public class PriceDeviationInstrument implements IStrategy {
         }
       }
 
-      double currentBuyAmount = getAmount(buyOrderCount+1);
-      double currentSellAmount = getAmount(sellOrderCount+1);
+      double currentBuyAmount = getAmount(followUpBuyOrder ? 1 : (buyOrderCount+1));
+      double currentSellAmount = getAmount(followUpSellOrder ? 1 : (sellOrderCount+1));
 
       double adjustableBuyAmount = currentBuyAmount;
       double adjustableSellAmount = currentSellAmount;
 
       if(configs.amount_start_small) {
-        if(buyOrderCount > 0)
+        if(!followUpBuyOrder && buyOrderCount > 0)
           adjustableBuyAmount = (buyOrderCount-1)*(currentBuyAmount/buyOrderCount);
-        if(sellOrderCount > 0)
+        if(!followUpSellOrder && sellOrderCount > 0)
           adjustableSellAmount = (sellOrderCount-1)*(currentSellAmount/sellOrderCount);
       }
-      if(Double.compare(adjustableBuyAmount, totalBoughtAmount) > 0){
+      if(!followUpBuyOrder && Double.compare(adjustableBuyAmount, totalBoughtAmount) > 0){
         currentBuyAmount= adjustableBuyAmount-totalBoughtAmount;
         totalBuyOrder = 0;
         newBuyOrder = true;
       }
-      if(Double.compare(adjustableSellAmount, totalSoldAmount) > 0){
+      if(!followUpSellOrder && Double.compare(adjustableSellAmount, totalSoldAmount) > 0){
         currentSellAmount= adjustableSellAmount-totalSoldAmount;
         totalSellOrder = 0;
         newSellOrder = true;
       }
 
+      Boolean balancedBuyAmt = false;
+      Boolean balancedSellAmt = false;
       if(configs.amount_balanced_set && SharedProps.amount_balanced_by_margin_reached) {
         if(Double.compare(totalSoldAmount - totalBoughtAmount, currentBuyAmount) > 0) {
           if(!followUpBuyOrder) { // buyOrderCount > 0 &&
@@ -672,7 +747,7 @@ public class PriceDeviationInstrument implements IStrategy {
             currentBuyAmount *= configs.amount_balanced_ratio;
           }
           //totalBuyOrder =0;
-          //newBuyOrder = true;
+          balancedBuyAmt = true;
         }
         if(Double.compare(totalBoughtAmount - totalSoldAmount, currentSellAmount) > 0) {
           if(!followUpSellOrder) { // sellOrderCount > 0 &&
@@ -681,20 +756,34 @@ public class PriceDeviationInstrument implements IStrategy {
           }
           //totalSellOrder =0;
           //newSellOrder = true;
+          balancedSellAmt = true;
         }
       }
-
-      if (Double.compare(currentBuyAmount, 0.001) >= 0
-          && totalBuyOrder < configs.num_orders_an_inst+1
-          && newBuyOrder && !positiveSellOrder) {
-        if(getTrend("UP"))
-          executeSubmitOrder(currentBuyAmount, OrderCommand.BUY);
+      Boolean do_buy =  Double.compare(currentBuyAmount, 0.001) >= 0 &&
+                        totalBuyOrder < configs.num_orders_an_inst+1 &&
+                        newBuyOrder && !positiveSellOrder &&
+                        (followUpBuyOrder || getTrend("UP"));
+      Boolean do_sell = Double.compare(currentSellAmount, 0.001) >= 0 &&
+                        totalSellOrder < configs.num_orders_an_inst+1 &&
+                        newSellOrder  && !positiveBuyOrder &&
+                        (followUpSellOrder || getTrend("DW"));
+      if (do_buy) {
+        executeSubmitOrder(currentBuyAmount, OrderCommand.BUY);
+        if(totalSoldAmount < totalBoughtAmount + currentBuyAmount &&
+           !balancedBuyAmt &&
+           !followUpBuyOrder &&
+           !do_sell &&
+           actualBuyOrder > 0)
+          executeSubmitOrder(currentBuyAmount, OrderCommand.SELL);
       }
-      if (Double.compare(currentSellAmount, 0.001) >= 0
-          && totalSellOrder < configs.num_orders_an_inst+1
-          && newSellOrder  && !positiveBuyOrder) {
-        if(getTrend("DW"))
-          executeSubmitOrder(currentSellAmount, OrderCommand.SELL);
+      if (do_sell) {
+        executeSubmitOrder(currentSellAmount, OrderCommand.SELL);
+        if(totalBoughtAmount < totalSoldAmount + currentSellAmount &&
+           !balancedSellAmt &&
+           !followUpSellOrder &&
+           !do_buy &&
+           actualSellOrder > 0)
+          executeSubmitOrder(currentSellAmount, OrderCommand.BUY);
       }
 
     } catch (Exception e) {
@@ -702,6 +791,7 @@ public class PriceDeviationInstrument implements IStrategy {
           "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
     }
   }
+
   private void executeSubmitOrder(double amountCurrent, OrderCommand orderCmd) {
     double lastPrice;
     try {
@@ -758,7 +848,7 @@ public class PriceDeviationInstrument implements IStrategy {
         SharedProps.curr_a_ts.put(inst_cur_2, ts + configs.open_new_for_currency_after_mins);
 
         if(new_order != null && new_order.getId() != null)
-          SharedProps.oBusy.put(new_order.getId(), ts + 2500);
+          SharedProps.oBusy.put(new_order.getId(), ts + 500);
 
       }catch (Exception e){
         SharedProps.print("SubmitOrderProceed call() E: "+e.getMessage()+" " +
@@ -1605,7 +1695,7 @@ public class PriceDeviationInstrument implements IStrategy {
     }
   }
 
-
+  
 
   private double getAmount(int num_orders) {
     double amt = configs.get_amount();

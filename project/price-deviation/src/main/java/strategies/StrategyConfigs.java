@@ -91,11 +91,13 @@ public class StrategyConfigs {
   public double merge_max = 33;
   @Configurable("Merge distance StdDev divider")
   public double merge_distance_std_dev_divider = 3;
-
+  @Configurable("Merge followup step muliplier")
+  public double merge_followup_step_muliplier = 6;
+  
   @Configurable("Open new order at negative distance of StdDev divider")
   public double open_new_std_dev_divider = 5;
-  @Configurable("Open follow up order at positive distance of StdDev divider")
-  public double open_followup_std_dev_divider = 3;
+  @Configurable("Open follow up order at positive distance by step multiplier")
+  public double open_followup_step_muliplier = 20;
   @Configurable("Open new order for related currency after ms")
   public long open_new_for_currency_after_mins = 0;
 
@@ -260,9 +262,9 @@ public class StrategyConfigs {
             open_new_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("open_new_std_dev_divider set to: "+open_new_std_dev_divider);
             break;
-          case "open_followup_std_dev_divider":
-            open_followup_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_std_dev_divider set to: "+open_followup_std_dev_divider);
+          case "open_followup_step_muliplier":
+            open_followup_step_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("open_followup_step_muliplier set to: "+open_followup_step_muliplier);
             break;
           case "open_new_for_currency_after_mins":
             open_new_for_currency_after_mins = Long.valueOf(config[1]);
@@ -305,11 +307,14 @@ public class StrategyConfigs {
             SharedProps.print("amount_start_small set to: "+amount_start_small);
             break;
 
-          case "merge_distance_std_dev_divider":
+            case "merge_distance_std_dev_divider":
             merge_distance_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("merge_distance_std_dev_divider set to: "+merge_distance_std_dev_divider);
             break;
-
+          case "merge_followup_step_muliplier":
+            merge_followup_step_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("merge_followup_step_muliplier set to: "+merge_followup_step_muliplier);
+            break;
           case "merge_max":
             merge_max = Double.valueOf(config[1]);
             SharedProps.print("merge_max set to: "+merge_max);
