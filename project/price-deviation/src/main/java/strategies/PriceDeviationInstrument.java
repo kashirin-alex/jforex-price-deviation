@@ -19,6 +19,7 @@ public class PriceDeviationInstrument implements IStrategy {
   private IEngine engine;
   private IHistory history;
   private IContext context;
+  private IAccount account;
   private IIndicators indicators;
 
   private StrategyConfigs configs;
@@ -70,6 +71,7 @@ public class PriceDeviationInstrument implements IStrategy {
     context = ctx;
     engine = ctx.getEngine();
     history = ctx.getHistory();
+    account = ctx.getAccount();
     indicators = ctx.getIndicators();
     inst_str = inst.toString();
     inst_pip = inst.getPipValue();
@@ -353,7 +355,7 @@ public class PriceDeviationInstrument implements IStrategy {
 
         for( IOrder o : orders) {
           if(Double.compare(o.getProfitLossInPips() * inst_pip, step_1st) <= 0 ||
-             ts - SharedProps.oBusy.get(o.getId()) < 500) {
+             ts - SharedProps.oBusy.get(o.getId()) < 888) {
             continue;
           }
 
@@ -433,13 +435,12 @@ public class PriceDeviationInstrument implements IStrategy {
       boolean merge = true;
       if(mergeBuyOrders.size() >= 2) {
         for(IOrder o: mergeBuyOrders){
-          if(ts + 100 < SharedProps.oBusy.get(o.getId())){
+          if(ts + 500 < SharedProps.oBusy.get(o.getId())) {
             merge = false;
             break;
           }
           if(Double.compare(o.getStopLossPrice(),0) > 0){
             executeOrderSetSL(o, 0);
-            SharedProps.oBusy.put(o.getId(), ts + 700);
             merge = false;
           }
         }
@@ -451,13 +452,12 @@ public class PriceDeviationInstrument implements IStrategy {
       merge = true;
       if(mergeSellOrders.size() >= 2) {
         for(IOrder o: mergeSellOrders){
-          if(ts + 100 < SharedProps.oBusy.get(o.getId())){
+          if(ts + 500 < SharedProps.oBusy.get(o.getId())) {
             merge = false;
             break;
           }
           if(Double.compare(o.getStopLossPrice(),0) > 0){
             executeOrderSetSL(o, 0);
-            SharedProps.oBusy.put(o.getId(), ts + 700);
             merge = false;
           }
         }
@@ -512,7 +512,7 @@ public class PriceDeviationInstrument implements IStrategy {
           if (Double.compare(o.getTakeProfitPrice(), 0) != 0 && Double.compare(o.getOpenPrice(), trail_price) > 0)
             o.setTakeProfitPrice(0);
         }
-        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 700);
+        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 900);
       }catch (Exception e){
         SharedProps.print("TrailingOrder call() E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
@@ -551,7 +551,8 @@ public class PriceDeviationInstrument implements IStrategy {
     
         om = engine.mergeOrders(orders.get(0).getOrderCommand().toString()+SharedProps.get_sys_ts(),  
                     o_comment(cost_price), orders.get(0), orders.get(1));
-        SharedProps.oBusy.put(om.getId(), SharedProps.get_sys_ts() + 500);
+        if(om != null && om.getId() != null)
+          SharedProps.oBusy.put(om.getId(), SharedProps.get_sys_ts() + 900);
 
       }catch (Exception e){
         SharedProps.print("MergeOrders call() E: "+e.getMessage()+" " +
@@ -615,6 +616,7 @@ public class PriceDeviationInstrument implements IStrategy {
     public IOrder call() {
       try {
         o.setStopLossPrice(sl);
+        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 900);
       }catch (Exception e){
         SharedProps.print("OrderSetSL call() E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
@@ -769,21 +771,43 @@ public class PriceDeviationInstrument implements IStrategy {
                         (followUpSellOrder || getTrend("DW"));
       if (do_buy) {
         executeSubmitOrder(currentBuyAmount, OrderCommand.BUY);
-        if(totalSoldAmount < totalBoughtAmount + currentBuyAmount &&
+        if(totalSoldAmount < totalBoughtAmount &&
            !balancedBuyAmt &&
            !followUpBuyOrder &&
            !do_sell &&
-           actualBuyOrder > 0)
-          executeSubmitOrder(currentBuyAmount, OrderCommand.SELL);
+           actualBuyOrder > 0) {
+          double support_amt = currentBuyAmount;
+          double ratio = account.getUseOfLeverage();
+          if(!Double.isNaN(ratio)) {
+            ratio /= configs.open_support_diff_on_leverage;
+            if(Double.compare(ratio, 1) > 0)
+              ratio = 1;
+            support_amt = (totalBoughtAmount - totalSoldAmount + currentBuyAmount) * ratio;
+            if(Double.compare(support_amt, currentBuyAmount) < 0)
+              support_amt = currentBuyAmount;
+          }
+          executeSubmitOrder(support_amt, OrderCommand.SELL);
+        }
       }
       if (do_sell) {
         executeSubmitOrder(currentSellAmount, OrderCommand.SELL);
-        if(totalBoughtAmount < totalSoldAmount + currentSellAmount &&
+        if(totalBoughtAmount < totalSoldAmount &&
            !balancedSellAmt &&
            !followUpSellOrder &&
            !do_buy &&
-           actualSellOrder > 0)
-          executeSubmitOrder(currentSellAmount, OrderCommand.BUY);
+           actualSellOrder > 0) {
+          double support_amt = currentSellAmount;
+          double ratio = account.getUseOfLeverage();
+          if(!Double.isNaN(ratio)) {
+            ratio /= configs.open_support_diff_on_leverage;
+            if(Double.compare(ratio, 1) > 0)
+              ratio = 1;
+            support_amt = (totalSoldAmount - totalBoughtAmount + currentSellAmount) * ratio;
+            if(Double.compare(support_amt, currentSellAmount) < 0)
+              support_amt = currentSellAmount;
+          }
+          executeSubmitOrder(support_amt, OrderCommand.BUY);
+        }
       }
 
     } catch (Exception e) {
@@ -848,7 +872,7 @@ public class PriceDeviationInstrument implements IStrategy {
         SharedProps.curr_a_ts.put(inst_cur_2, ts + configs.open_new_for_currency_after_mins);
 
         if(new_order != null && new_order.getId() != null)
-          SharedProps.oBusy.put(new_order.getId(), ts + 500);
+          SharedProps.oBusy.put(new_order.getId(), ts + 900);
 
       }catch (Exception e){
         SharedProps.print("SubmitOrderProceed call() E: "+e.getMessage()+" " +

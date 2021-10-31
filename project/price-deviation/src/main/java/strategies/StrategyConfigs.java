@@ -98,9 +98,11 @@ public class StrategyConfigs {
   public double open_new_std_dev_divider = 5;
   @Configurable("Open follow up order at positive distance by step multiplier")
   public double open_followup_step_muliplier = 20;
+  @Configurable("Open support side difference by % ratio to leverage")
+  public double open_support_diff_on_leverage = 80;
   @Configurable("Open new order for related currency after ms")
   public long open_new_for_currency_after_mins = 0;
-
+  
 
   @Configurable("Profitable ratio min of StdDev on min step")
   public double profitable_ratio_min = 4;
@@ -266,6 +268,11 @@ public class StrategyConfigs {
             open_followup_step_muliplier = Double.valueOf(config[1]);
             SharedProps.print("open_followup_step_muliplier set to: "+open_followup_step_muliplier);
             break;
+          case "open_support_diff_on_leverage":
+            open_support_diff_on_leverage = Double.valueOf(config[1]);
+            SharedProps.print("open_support_diff_on_leverage set to: "+open_support_diff_on_leverage);
+            break;
+            
           case "open_new_for_currency_after_mins":
             open_new_for_currency_after_mins = Long.valueOf(config[1]);
             SharedProps.print("open_new_for_currency_after_mins set to: "+open_new_for_currency_after_mins);
