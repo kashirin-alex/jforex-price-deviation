@@ -34,6 +34,7 @@ public class PriceDeviationInstrument implements IStrategy {
   private double inst_pip;
   private int inst_scale;
   private long inst_exec_ts;
+  private double rnd_ratio = 0.0;
   private boolean inst_init = false;
 
   private HashMap<String, Double> inst_last_price = new HashMap<>();
@@ -45,6 +46,17 @@ public class PriceDeviationInstrument implements IStrategy {
 
   private double minFirstStepByInst;
   private long min_1st_step_inst_ts = 0;
+  private long inst_std_dev_ts = 0;
+
+  private HashMap<String, Long> inst_tf_ts = new HashMap<>();
+  private HashMap<String, Double> inst_tf = new HashMap<>();
+  private HashMap<String, Long> inst_tf_gf = new HashMap<>();
+
+  private double inst_timeframe = 0;
+  private HashMap<String, Double> inst_timeframes = new HashMap<>();
+
+  private double inst_pip_dist = 0;
+  private HashMap<String, Double> inst_pip_dists = new HashMap<>();
 
 
   @Override
@@ -76,6 +88,7 @@ public class PriceDeviationInstrument implements IStrategy {
     }
 
     minFirstStepByInst = configs.trail_step_1st_min * inst_pip;
+    SharedProps.inst_std_dev_avg.put(inst_str, Double.NaN);
 
     new Thread(new Runnable() {
       @Override
@@ -86,8 +99,9 @@ public class PriceDeviationInstrument implements IStrategy {
 
   private void runInstrument() {
     int counter = 999;
+    double std_dev;
     long ts = SharedProps.get_sys_ts();
-    inst_exec_ts = ts + 10000;
+    inst_exec_ts = ts + 120000;
     while(!stop_run) {
       try{
         if(!SharedProps.inst_active.get(inst_str)) {
@@ -103,21 +117,35 @@ public class PriceDeviationInstrument implements IStrategy {
       if(ts-min_1st_step_inst_ts > 60000)
         setInstFirstStep(ts);
 
+      if(ts-inst_std_dev_ts > 180000)
+        setStdDev(ts);
+
+      std_dev = getStdDevPip();
+      if(Double.isNaN(std_dev))
+        continue;
+
+      setTimeFrames(ts);
+
       if(++counter == 1000) {
-        if(configs.debug)
-          SharedProps.print(
-            inst_str +
-            " step: " + SharedProps.round(getFirstStep()/inst_pip, 1) +
-            " diff: " + SharedProps.round(getOffersDifference()/inst_pip, 1)
-          );
+        SharedProps.print(inst_str +
+              "|Amt: " + getAmount(1) +
+              "|1stStep: " + SharedProps.round(getFirstStep()/inst_pip, 1) +
+              "|min1stStep: " + SharedProps.round(minFirstStepByInst,1) +
+              "|StdDevPip: " + SharedProps.round(std_dev,1) +
+              "|pip_dist: " + SharedProps.round(inst_pip_dist/inst_pip,1) +
+              "|diff: " + SharedProps.round(getOffersDifference()/inst_pip, 1) +
+              "|timeframe: " + inst_timeframe
+        );
         counter = 0;
       }
-      if(ts-inst_exec_ts < 10000)
+      if(ts-inst_exec_ts < 20000)
+        continue;
+      if(Double.isNaN(inst_timeframe) || Double.compare(inst_timeframe,0) == 0)
         continue;
       if(inst_busy_exec_ts > ts)
         continue;
 
-      executeInstrument(ts);
+      executeInstrument(ts, std_dev);
       pid_restart = false;
       inst_init = true;
     }
@@ -321,10 +349,12 @@ public class PriceDeviationInstrument implements IStrategy {
         }
       }
 
-
-      if(inst_init && orders.size() > 1) {
+      double std_dev = getStdDevPip();
+      if(inst_init && !Double.isNaN(std_dev) && orders.size() > 1) {
         for(IOrder o : orders) {
-          if(Double.compare(o.getProfitLossInPips(), 0.0) < 0) {
+          double weight = o.getAmount()/getAmount(1);
+          if(Double.compare(weight, configs.merge_max) < 0 &&
+             Double.compare(o.getProfitLossInPips(), -std_dev/(configs.merge_distance_std_dev_divider*(configs.merge_max/weight))) <= 0) {
             cmd = o.getOrderCommand();
             if(cmd == OrderCommand.SELL)
               mergeSellOrders.add(o);
@@ -341,55 +371,55 @@ public class PriceDeviationInstrument implements IStrategy {
 
       ////
       for( IOrder o : orders) {
-          if(Double.compare(o.getProfitLossInPips(), step_1st_pip) <= 0 ||
-             ts - SharedProps.oBusy.get(o.getId()) < 888) {
-            continue;
-          }
+        if(Double.compare(o.getProfitLossInPips(), step_1st_pip) <= 0 ||
+           ts - SharedProps.oBusy.get(o.getId()) < 888) {
+          continue;
+        }
 
-          cmd = o.getOrderCommand();
-          trailingStep = step_1st;
-          if(o.getLabel().contains("Signal:"))
-            trailingStep = trailingStep*2;
+        trailingStep = step_1st;
+        if(o.getLabel().contains("Signal:"))
+          trailingStep = trailingStep*2;
 
-          o_cost = getCommisionPip(o) + 0.5;
-          if(configs.debug)
-            SharedProps.print(inst_str+" o_cost:"+SharedProps.round(o_cost, 2) +
+        o_cost = getCommisionPip(o) + 0.5;
+        if(configs.debug)
+          SharedProps.print(inst_str+" o_cost:"+SharedProps.round(o_cost, 2) +
                               " step:"+SharedProps.round((trailingStep/inst_pip), 2));
-          o_cost *= inst_pip;
-          o_profit = o.getProfitLossInPips() * inst_pip;
-          if(Double.compare(o_profit - o_cost, trailingStep * 2) <= 0)
-            continue;
+        o_cost *= inst_pip;
+        o_profit = o.getProfitLossInPips() * inst_pip;
+        if(Double.compare(o_profit - o_cost, trailingStep * 2) <= 0)
+          continue;
 
-          if(Double.compare(o_profit - trailingStep,  o_profit * configs.trail_step_rest_plus_gain) > 0)
-            trailingStep += o_profit * configs.trail_step_rest_plus_gain;
+        if(Double.compare(o_profit - trailingStep,  o_profit * configs.trail_step_rest_plus_gain) > 0)
+          trailingStep += o_profit * configs.trail_step_rest_plus_gain;
 
-          trailingStepPip = SharedProps.round((trailingStep/inst_pip)*1.2, inst_scale);
-          ITick t = getLastTick();
-          lastTickBid = t.getBid();
-          lastTickAsk = t.getAsk();
+        trailingStepPip = SharedProps.round((trailingStep/inst_pip)*1.2, inst_scale);
+        ITick t = getLastTick();
+        lastTickBid = t.getBid();
+        lastTickAsk = t.getAsk();
 
-          if (cmd == OrderCommand.BUY) {
-            trailSLprice = lastTickBid - trailingStep - (lastTickAsk - lastTickBid);
-            trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
+        cmd = o.getOrderCommand();
+        if (cmd == OrderCommand.BUY) {
+          trailSLprice = lastTickBid - trailingStep - (lastTickAsk - lastTickBid);
+          trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
-            if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) < 0) {
-              if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-                if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
-                  executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
-              }
-            }
-
-          } else if (cmd == OrderCommand.SELL) {
-            trailSLprice = lastTickAsk + trailingStep + (lastTickAsk - lastTickBid);
-            trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
-
-            if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) > 0) {
-              if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-                if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
-                  executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
-              }
+          if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) < 0) {
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
+                executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
             }
           }
+
+        } else if (cmd == OrderCommand.SELL) {
+          trailSLprice = lastTickAsk + trailingStep + (lastTickAsk - lastTickBid);
+          trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
+
+          if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) > 0) {
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
+                executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
+            }
+          }
+        }
 
       }
 
@@ -584,7 +614,7 @@ public class PriceDeviationInstrument implements IStrategy {
   
   
   //
-  private void executeInstrument(long ts) {
+  private void executeInstrument(long ts, double std_dev) {
     try {
   
       double amt = getAmount(1);
@@ -630,6 +660,11 @@ public class PriceDeviationInstrument implements IStrategy {
               }
               positiveBuyOrder = true;
             }
+            if(!followUpBuyOrder) {
+              double weight = o_amt/amt;
+              if(Double.compare(Math.abs(o_profit), std_dev/(configs.open_new_std_dev_divider*(configs.merge_max/weight))) > 0)
+                --totalBuyOrder;
+            }
           }
 
         }else if(cmd == OrderCommand.SELL || cmd == OrderCommand.PLACE_OFFER || cmd == OrderCommand.SELLLIMIT || cmd == OrderCommand.SELLSTOP) {
@@ -647,6 +682,11 @@ public class PriceDeviationInstrument implements IStrategy {
               }
               positiveSellOrder = true;
             }
+            if(!followUpSellOrder) {
+              double weight = o_amt/amt;
+              if(Double.compare(Math.abs(o_profit), std_dev/(configs.open_new_std_dev_divider*(configs.merge_max/weight))) > 0)
+                --totalBuyOrder;
+            }
           }
         }
       }
@@ -656,8 +696,8 @@ public class PriceDeviationInstrument implements IStrategy {
       if(Double.compare(totalSoldAmount, 0.0) > 0 && Double.compare(totalSoldAmount, amt) < 0)
         --totalSellOrder;
 
-      Boolean do_buy =  totalBuyOrder < 1 && !positiveSellOrder;
-      Boolean do_sell = totalSellOrder < 1 && !positiveBuyOrder;
+      Boolean do_buy =  totalBuyOrder < 2 && !positiveSellOrder && (followUpBuyOrder  || getTrend("UP"));
+      Boolean do_sell = totalSellOrder < 2 && !positiveBuyOrder && (followUpSellOrder || getTrend("DW"));
   
       if(do_buy || do_sell) {
         if(do_buy)
@@ -810,11 +850,516 @@ public class PriceDeviationInstrument implements IStrategy {
   }
 
   //
+  private void setStdDev(long ts) {
+
+    double tf = configs.period_to_minutes(configs.std_dev_period)*configs.std_dev_time;
+    double max = getMax(tf, OfferSide.ASK);
+    double min = getMin(tf, OfferSide.BID);
+    if(Double.isNaN(max) || Double.compare(max,0) == 0 || Double.isNaN(min) || Double.compare(min,0) == 0)
+      return;
+
+    double cur_std_dev = (max-min);
+    double minimal = minFirstStepByInst*configs.period_to_minutes(configs.std_dev_period)*(inst_pip/10);
+    cur_std_dev = Double.compare(cur_std_dev, minimal)>0?cur_std_dev:minimal;
+
+    if (Double.isNaN(SharedProps.inst_std_dev_avg.get(inst_str)))
+      SharedProps.inst_std_dev_avg.put(inst_str, cur_std_dev);
+    else
+      SharedProps.inst_std_dev_avg.put(inst_str, (SharedProps.inst_std_dev_avg.get(inst_str)+cur_std_dev)/2);
+    inst_std_dev_ts = ts;
+  }
+
+  //
   private double getFirstStep() {
     double step = minFirstStepByInst/configs.trail_step_1st_divider;
     return (Double.compare(step, configs.trail_step_1st_min)>0?step:configs.trail_step_1st_min)*inst_pip;
   }
+  private double getMinStdDev(double rnd) {
+    double min = minFirstStepByInst;
+    min = (Double.compare(min, configs.trail_step_1st_min)>0?min:configs.trail_step_1st_min)*inst_pip;
+    min *= configs.profitable_ratio_min+(configs.profitable_ratio_max-configs.profitable_ratio_min)*rnd;
+    min += getOffersDifference();
+    return SharedProps.round(min,inst_scale+1);
+  }
+  private double getStdDev() {
+    return SharedProps.inst_std_dev_avg.get(inst_str);
+  }
+  private double getStdDevPip() {
+    double std_dev = SharedProps.inst_std_dev_avg.get(inst_str);
+    if(!Double.isNaN(std_dev))
+      return std_dev/inst_pip;
+    return Double.NaN;
+  }
 
+  //
+  private void setTimeFrames(long ts) {
+    try {
+      rnd_ratio += configs.profitable_ratio_chg;
+      rnd_ratio = SharedProps.round(rnd_ratio, 2);
+      if(Double.compare(rnd_ratio, 1) > 0)
+        rnd_ratio=0;
+
+      String k_r = inst_str+rnd_ratio;
+      String k = inst_str+rnd_ratio;
+
+      if(inst_tf_gf.containsKey(k_r)) {
+        if(inst_tf_gf.get(k_r)-(Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis() > 0) {
+          inst_pip_dist = inst_pip_dists.get(k_r);
+          inst_timeframe = inst_timeframes.get(k_r);
+          return;
+        }
+        if(configs.debug)
+          SharedProps.print(inst_str+" ts miss "+((inst_tf_gf.get(k_r)-
+              (Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis())/1000)+"@"+k_r);
+      }
+      String tmp_k;
+      double minSetStdDev = getMinStdDev(rnd_ratio);
+
+      double high, low;
+      double foundTime = 0;
+      double oneMinChange = 0;
+      double oneMinChangeSet = 0;
+      double oneMinChangeExists = 0;
+
+      // ON 1 SECOND
+      tmp_k = "_ONE_SEC";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 1000){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(16, OfferSide.ASK);
+          low = getMin(16, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int n=120; n<=960; n+=7){
+            int i = n/360;
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      // ON 10 SECONDS
+      tmp_k = "_TEN_SEC";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 7500){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(166, OfferSide.ASK);
+          low = getMin(166, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int i=17; i<166; i++){
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      // ON 1 MINUTE
+      tmp_k = "_ONE_MIN";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 30000){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(1000, OfferSide.ASK);
+          low = getMin(1000, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int i=167; i<1000; i++){
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      // ON 5 MINUTES
+      tmp_k = "_FIVE_MIN";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 150000){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(5000, OfferSide.ASK);
+          low = getMin(5000, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int i=1000; i<5000; i+=16){
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      // ON 10 MINUTES
+      tmp_k = "_TEEN_MIN";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 300000){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(10000, OfferSide.ASK);
+          low = getMin(10000, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int i=5000; i<10000; i+=20){
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      // ON 15 MINUTES
+      tmp_k = "_FIFTEEN_MIN";
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        if (inst_tf_ts.containsKey(k+tmp_k)) {
+          if( ts - inst_tf_ts.get(k+tmp_k) < 450000){
+            oneMinChangeSet = inst_tf.get(k+tmp_k);
+            foundTime = inst_tf.get(k+tmp_k+"_ft");
+          }
+        }
+      }
+      if(Double.compare(oneMinChangeSet,0) == 0) {
+        try{
+          high = getMax(15000, OfferSide.ASK);
+          low = getMin(15000, OfferSide.BID);
+          oneMinChangeExists = high-low;
+
+        } catch (Exception e) {
+          if(configs.debug)
+            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+        }
+        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
+          oneMinChangeExists=0;
+          for(int i=10000; i<15000; i+=20){
+            try {
+              high = getMax(i, OfferSide.ASK);
+              low = getMin(i, OfferSide.BID);
+              oneMinChange = high-low;
+
+              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
+                foundTime = i;
+                oneMinChangeSet = oneMinChange;
+                inst_tf.put(k+tmp_k, oneMinChangeSet);
+                inst_tf.put(k+tmp_k+"_ft", foundTime);
+              }
+            } catch (Exception e) {
+              if(configs.debug)
+                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+            }
+            if(Double.compare(oneMinChangeSet, 0) > 0) break;
+          }
+        }
+      }
+      ///
+
+      if(!Double.isNaN(oneMinChangeSet) && Double.compare(oneMinChangeSet,0) > 0) {
+        double yE = getStdDev()/oneMinChangeSet;
+        double xE = ((configs.std_dev_time*configs.period_to_minutes(configs.std_dev_period))/foundTime);
+    
+        double timeframe = SharedProps.round(foundTime*(1+yE/xE), 1);
+        if(Double.compare(timeframe,0) > 0) {
+          inst_tf_ts.put(k, ts);
+
+          double pips_dist = getPipsDistance(timeframe, minSetStdDev);
+          if(Double.isNaN(pips_dist)) return;
+          //pips_dist *= (1+(yE/xE)/2);
+
+          if(configs.debug)
+            SharedProps.print(inst_str+" tf"+
+                " ft: "+foundTime+
+                " xA: "+SharedProps.round(xE,1)+
+                " yA: "+SharedProps.round(yE,1)+
+                " r: "+SharedProps.round(1+yE/xE,2)+
+                " = "+SharedProps.round(timeframe, 1)+
+                " @ "+SharedProps.round(pips_dist/inst_pip, 1)+
+                " >> "+SharedProps.round(minSetStdDev/inst_pip,1 )+"@"+rnd_ratio);
+
+          Period p = configs.minutes_to_period(foundTime);
+          long good_for = history.getBarStart(p, getLastTick().getTime())+
+              (p.getInterval()*configs.profitable_ratio_good_for_bars);
+          long cal_ts = (Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis();
+          if(good_for < cal_ts)
+            good_for += (cal_ts-good_for)+p.getInterval();
+          inst_tf_gf.put(k_r, good_for);
+
+          inst_pip_dist = SharedProps.round(pips_dist, inst_scale+1);
+          inst_pip_dists.put(k_r, inst_pip_dist);
+      
+          // foundTime --  chk on smaller time 
+          inst_timeframe = timeframe;
+          inst_timeframes.put(k_r, inst_timeframe);
+          if(configs.debug) {
+            SharedProps.print(inst_str +
+                " ts good " + p.toString() +
+                " set:"+inst_tf_gf.get(k_r)+
+                " cur:"+cal_ts+
+                " for:"+(((double) (inst_tf_gf.get(k_r)-cal_ts))/1000)+
+                " @" + k_r);
+          }
+
+        }
+      }
+    } catch (Exception e) {
+      if(configs.debug)
+        SharedProps.print("setTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
+    }
+  }
+
+  //
+  private double getPipsDistance(double tf, double min_std_dev) {
+    double min = getMin(tf, OfferSide.BID);
+    double max = getMax(tf, OfferSide.ASK);
+    if(Double.isNaN(min) || Double.isNaN(max)) return Double.NaN;
+
+    double pips = max-min;
+    if(Double.compare(pips, min_std_dev) < 0) return Double.NaN;
+    if(configs.debug)
+      SharedProps.print(inst_str+" pip_dist: "+ SharedProps.round(pips,inst_scale+1)+"@"+tf);
+    return pips;
+  }
+
+  //
+  private boolean getTrend(String trend) {
+    return getPriceDifference(trend);
+  }
+
+
+  private boolean getPriceDifference(String trend) {
+    if(Double.compare(inst_pip_dist, 0) == 0)return false;
+
+    try{
+      double price_dif = 0.0;
+      double base;
+      double cur;
+      switch (trend){
+        case "DW":
+          base = getMin(inst_timeframe, OfferSide.ASK);
+          if(Double.isNaN(base)) return false;
+          cur = getLastTick().getBid();
+          if(Double.isNaN(cur)) return false;
+          price_dif = SharedProps.round(cur-base, inst_scale+1);
+          if(configs.debug)
+            SharedProps.print("getPriceDifference: DW "+inst_str+" "+cur+"-"+base+"="+price_dif+" @"+inst_timeframe);
+          break;
+
+        case "UP":
+          base = getMax(inst_timeframe, OfferSide.BID);
+          if(Double.isNaN(base)) return false;
+          cur = getLastTick().getAsk();
+          if(Double.isNaN(cur)) return false;
+          price_dif = SharedProps.round(base-cur, inst_scale+1);
+          if(configs.debug)
+            SharedProps.print("getPriceDifference: UP "+inst_str+" "+base+"-"+cur+"="+price_dif+" @"+inst_timeframe);
+          break;
+      }
+
+      price_dif -= Math.abs(getOffersDifference());
+      double pipDistanceSet = SharedProps.round(inst_pip_dist*configs.price_diff_multiplier, inst_scale+1);
+      
+      if(configs.debug)
+        SharedProps.print("getPriceDifference: "+inst_str+"_"+trend +
+          " "+SharedProps.round(price_dif - pipDistanceSet, inst_scale+1) +
+          " "+SharedProps.round(price_dif, inst_scale+1) +
+          ">" + SharedProps.round(pipDistanceSet, inst_scale+1) +" @"+inst_timeframe);
+      
+      if(Double.compare(price_dif, pipDistanceSet) >= 0) {
+        /*
+        inst_trend_info.put(inst_str+"_"+trend,
+          inst_trend_info.get(inst_str+"_"+trend)+
+            " "+price_dif+">"+pipDistanceSet +
+            " "+configs.minutes_to_period(inst_timeframe).toString()+
+            ":"+configs.minutes_to_period_scale((inst_timeframe))+
+            " / "+configs.minutes_to_period(inst_timeframe,200).toString()+
+              ":"+configs.minutes_to_period_scale(inst_timeframe,200));
+        */
+        return true;
+       }
+      
+    } catch (Exception e) {
+      if(configs.debug)
+        SharedProps.print("getPriceDifference E: "+e.getMessage()+
+                          " Thread: "+Thread.currentThread().getName()+" "+e+" "+inst_str);
+    }
+    return false;
+  }
+
+
+  private double getMin(double time_frame, OfferSide side){
+    try {
+      Period p = configs.minutes_to_period(time_frame);
+      long to = history.getBarStart(p, getLastTick().getTime());
+      long from = to - p.getInterval()*configs.minutes_to_period_scale(time_frame);
+      List<IBar> bars = history.getBars(inst, p, side, from, to);
+      double min = Double.MAX_VALUE;
+      double v;
+      for (IBar b: bars) {
+        v = b.getLow();
+        if(Double.compare(v, min)<0) min = v;
+      }
+      if(Double.compare(min, Double.MAX_VALUE)<0)
+        return min;
+    }catch (Exception e){
+      if(configs.debug)
+        SharedProps.print("getMin E: "+e.getMessage()+" Thread: "+Thread.currentThread().getName()+" "+e+" "+
+            inst_str+"@"+time_frame);
+    }
+    return Double.NaN;
+  }
+  private double getMax(double time_frame, OfferSide side){
+    try {
+      Period p = configs.minutes_to_period(time_frame);
+      long to = history.getBarStart(p, getLastTick().getTime());
+      long from = to - p.getInterval()*configs.minutes_to_period_scale(time_frame);
+      List<IBar> bars = history.getBars(inst, p, side, from, to);
+      double max = Double.MIN_VALUE;
+      double v;
+      for (IBar b: bars) {
+        v = b.getHigh();
+        if(Double.compare(v, max)>0) max = v;
+      }
+      if(Double.compare(max, Double.MIN_VALUE)>0)
+        return max;
+    }catch (Exception e){
+      if(configs.debug)
+        SharedProps.print("getMax E: "+e.getMessage()+" Thread: "+Thread.currentThread().getName()+" "+e+" "+
+            inst_str+"@"+time_frame);
+    }
+    return Double.NaN;
+  }
 
 
   @Override
@@ -884,8 +1429,17 @@ public class PriceDeviationInstrument implements IStrategy {
 
   
 
-  private double getAmount(int num_orders) {
-    return configs.get_amount();
+ private double getAmount(int num_orders) {
+    double amt = configs.get_amount();
+    return amt;
+    /*
+    if(num_orders == 1)
+      num_orders = 1;
+    amt *= (configs.merge_max * num_orders) / ((configs.merge_max * num_orders) + 2);
+    if(Double.compare(amt, 0.001) < 0)
+      amt = 0.001;
+    return amt;
+    */
   }
 
   @Override

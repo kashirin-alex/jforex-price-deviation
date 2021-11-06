@@ -59,6 +59,22 @@ public class AccountManagement implements IStrategy{
       return;
     if(SharedProps.get_ts()-on_acc_ts < 0)
       return;
+    try {
+      double amount = 1;
+      int counted_inst = StrategyConfigs.instruments.length;
+      if(counted_inst > 0) {
+        amount = ((eq - configs.amount_bonus) / (counted_inst * (configs.merge_max + 1)))
+                  / (configs.amount_value_fixed * 2);
+      }
+      amount /= 1000;
+      if(Double.compare(amount, 0.001) < 0)   amount = 0.001;
+      else if(Double.compare(amount, 10) > 0) amount = 10;
+
+      configs.set_amount(SharedProps.round(amount, 6));
+      on_acc_ts = SharedProps.get_ts()+10000;
+    } catch (Exception e) {
+      SharedProps.print("onAccount E: "+e.getMessage()+" Thread: " + Thread.currentThread().getName() + " " + e);
+    }
     on_acc_ts = SharedProps.get_ts()+5000;
   }
 
