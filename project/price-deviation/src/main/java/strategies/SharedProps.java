@@ -41,7 +41,6 @@ public class SharedProps {
   public static ConcurrentHashMap<String, Double> inst_amt_ratio = new ConcurrentHashMap<>();
   public static ConcurrentHashMap<String, Double> inst_std_dev_avg= new ConcurrentHashMap<>();
   public static ConcurrentHashMap<String, Long> oBusy= new ConcurrentHashMap<>();
-  public static ConcurrentHashMap<String, Long> curr_a_ts= new ConcurrentHashMap<>();
 
   public static double round(double amount, int decimalPlaces) {
     return (new BigDecimal(amount)).setScale(decimalPlaces, RoundingMode.HALF_UP).doubleValue();

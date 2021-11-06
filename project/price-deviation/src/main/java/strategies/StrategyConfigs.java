@@ -50,7 +50,6 @@ public class StrategyConfigs {
 
   public int slippage = 0;
 
-
   @Configurable("gain Base")
   public double gainBase = 0;
 
@@ -68,66 +67,28 @@ public class StrategyConfigs {
   @Configurable("Gain close fixed percentage above gain-base")
   public double gain_close_fixed_percent = 1.05;
 
-  @Configurable("Number of orders an instrument to each side")
-  public int num_orders_an_inst = 1;
-
-  public double amount = 0.001;
-  @Configurable("Fixed value for 0.001")
-  public double amount_value_fixed = 2;
-  @Configurable("Amount start small amount divider")
-  public boolean amount_start_small = true;
-
-  @Configurable("Amount Balanced ")
-  public boolean amount_balanced_set = false;
-  @Configurable("Amount Balanced from Margin Percent")
-  public double amount_balanced_from_margin = 50;
-  @Configurable("Amount Balanced Ratio-Multiplier")
-  public double amount_balanced_ratio = 1.0;
-
+  @Configurable("Fixed amount")
+  public double amount_value_fixed = 0.001;
   @Configurable("Bonus amount transparent")
   public double amount_bonus = 0;
 
-  @Configurable("Merge max")
-  public double merge_max = 33;
-  @Configurable("Merge distance StdDev divider")
-  public double merge_distance_std_dev_divider = 3;
   @Configurable("Merge followup step muliplier")
-  public double merge_followup_step_muliplier = 6;
-  
-  @Configurable("Open new order at negative distance of StdDev divider")
-  public double open_new_std_dev_divider = 5;
+  public double merge_followup_step_muliplier = 0.3;
   @Configurable("Open follow up order at positive distance by step multiplier")
-  public double open_followup_step_muliplier = 20;
-  @Configurable("Open support side difference by % ratio to leverage")
-  public double open_support_diff_on_leverage = 80;
-  @Configurable("Open new order for related currency after ms")
-  public long open_new_for_currency_after_mins = 0;
-  
-
-  @Configurable("Profitable ratio min of StdDev on min step")
-  public double profitable_ratio_min = 4;
-  @Configurable("Profitable ratio max of StdDev on min step")
-  public double profitable_ratio_max = 8;
-  @Configurable("Profitable ratio chg from min to max")
-  public double profitable_ratio_chg = 0.01;
-  @Configurable("Profitable ratios chk within ms")
-  public long profitable_ratio_chk_ms = 10000;
-  @Configurable("Profitable ratios good for bars in history")
-  public int profitable_ratio_good_for_bars = 1;
-
-  @Configurable("Standard deviation minutes timePeriod")
-  public int std_dev_time = 168;
-  @Configurable("Standard deviation Period")
-  public Period std_dev_period = Period.ONE_HOUR;
+  public double open_followup_step_muliplier = 1.33;
+  @Configurable("Open support side ration")
+  public double open_support_side_ratio = 1.00;
 
   @Configurable("trail step min pip")
-  public double trail_step_1st_min = 2.5;
+  public double trail_step_1st_min = 6.00;
   @Configurable("trail step 1st divider of min")
   public double trail_step_1st_divider = 2;
   @Configurable("trail step rest plus gain muliplier")
   public double trail_step_rest_plus_gain = 0.10;
 
 
+  @Configurable("Execute inst check ms")
+  public long execute_inst_ms = 100;
 
   @Configurable("manage Signals")
   public boolean manageSignals = false;
@@ -135,10 +96,6 @@ public class StrategyConfigs {
   @Configurable("tick with different price")
   public boolean onlyDifferentTick = false;
 
-  @Configurable("one Order Only")
-  public boolean onlyOneOrder = false;
-  @Configurable("one Order Value for 0.001")
-  public double onlyOneOrderAmount = 20;
 
   @Configurable("email Reports")
   public boolean emailReports = false;
@@ -147,37 +104,6 @@ public class StrategyConfigs {
   @Configurable("Report Email")
   public String reportEmail = "";
 
-  @Configurable("active_price_dif")
-  public boolean active_price_dif = true;
-  @Configurable("without Price Difference")
-  public boolean withoutPriceDifference = false;
-  @Configurable("Price Difference multiplier")
-  public double price_diff_multiplier = 0.90;
-
-  @Configurable("without CCI")
-  public boolean withoutCCI = true;
-  @Configurable("CCI level start")
-  public double CCIlevelStart = -200;
-  @Configurable("CCI level")
-  public double CCIlevel = 100;
-
-  @Configurable("without MA")
-  public boolean withoutMA = true;
-  @Configurable("MA time divider")
-  public double ma_time_divider = 60;
-
-  @Configurable("active_ema_overlap")
-  public boolean active_ema_overlap = false;
-  @Configurable("ema_overlap_bars_compared")
-  public int ema_overlap_bars_compared = 1;
-  @Configurable("ema_overlap_lvl_1")
-  public double ema_overlap_lvl_1 = 0.5;
-  @Configurable("ema_overlap_lvl_2")
-  public double ema_overlap_lvl_2 = 1;
-  @Configurable("ema_overlap_lvl_2_active")
-  public boolean ema_overlap_lvl_2_active = true;
-  @Configurable("ema_overlap_lvl_3")
-  public double ema_overlap_lvl_3 = 2;
 
   private static long getConfigsFileChange = 0;
   private static long getConfigsTimer = 0;
@@ -211,36 +137,9 @@ public class StrategyConfigs {
             SharedProps.print("debug set to: "+debug);
             break;
 
-          case "num_orders_an_inst":
-            num_orders_an_inst = Integer.valueOf(config[1]);
-            SharedProps.print("num_orders_an_inst set to: "+num_orders_an_inst);
-            break;
-
-          case "profitable_ratio_min":
-            profitable_ratio_min = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_min set to: "+profitable_ratio_min);
-            break;
-          case "profitable_ratio_max":
-            profitable_ratio_max = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_max set to: "+profitable_ratio_max);
-            break;
-          case "profitable_ratio_chg":
-            profitable_ratio_chg = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_chg set to: "+profitable_ratio_chg);
-            break;
-          case "profitable_ratio_chk_ms":
-            profitable_ratio_chk_ms = Long.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_chk_ms set to: "+profitable_ratio_chk_ms);
-            break;
-          case "profitable_ratio_good_for_bars":
-            profitable_ratio_good_for_bars = Integer.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_good_for_bars set to: "+profitable_ratio_good_for_bars);
-            break;
-
-
-          case "std_dev_time":
-            std_dev_time = Integer.valueOf(config[1]);
-            SharedProps.print("std_dev_time set to: "+std_dev_time);
+          case "execute_inst_ms":
+            execute_inst_ms = Long.valueOf(config[1]);
+            SharedProps.print("execute_inst_ms set to: "+execute_inst_ms);
             break;
 
 
@@ -258,24 +157,13 @@ public class StrategyConfigs {
             SharedProps.print("trail_step_rest_plus_gain set to: "+trail_step_rest_plus_gain);
             break;
 
-
-
-          case "open_new_std_dev_divider":
-            open_new_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("open_new_std_dev_divider set to: "+open_new_std_dev_divider);
-            break;
           case "open_followup_step_muliplier":
             open_followup_step_muliplier = Double.valueOf(config[1]);
             SharedProps.print("open_followup_step_muliplier set to: "+open_followup_step_muliplier);
             break;
-          case "open_support_diff_on_leverage":
-            open_support_diff_on_leverage = Double.valueOf(config[1]);
-            SharedProps.print("open_support_diff_on_leverage set to: "+open_support_diff_on_leverage);
-            break;
-            
-          case "open_new_for_currency_after_mins":
-            open_new_for_currency_after_mins = Long.valueOf(config[1]);
-            SharedProps.print("open_new_for_currency_after_mins set to: "+open_new_for_currency_after_mins);
+          case "open_support_side_ratio":
+            open_support_side_ratio = Double.valueOf(config[1]);
+            SharedProps.print("open_support_side_ratio set to: "+open_support_side_ratio);
             break;
 
           case "gain_close_count":
@@ -309,64 +197,15 @@ public class StrategyConfigs {
             amount_value_fixed = Double.valueOf(config[1]);
             SharedProps.print("amount_value_fixed set to: "+amount_value_fixed);
             break;
-          case "amount_start_small":
-            amount_start_small = config[1].equals("true");
-            SharedProps.print("amount_start_small set to: "+amount_start_small);
-            break;
 
-            case "merge_distance_std_dev_divider":
-            merge_distance_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("merge_distance_std_dev_divider set to: "+merge_distance_std_dev_divider);
-            break;
           case "merge_followup_step_muliplier":
             merge_followup_step_muliplier = Double.valueOf(config[1]);
             SharedProps.print("merge_followup_step_muliplier set to: "+merge_followup_step_muliplier);
-            break;
-          case "merge_max":
-            merge_max = Double.valueOf(config[1]);
-            SharedProps.print("merge_max set to: "+merge_max);
-            break;
-
-
-          case "amount_balanced_set":
-            amount_balanced_set = config[1].equals("true");
-            SharedProps.print("setBalancedAmount set to: "+amount_balanced_set);
-            break;
-          case "amount_balanced_from_margin":
-            amount_balanced_from_margin = Double.valueOf(config[1]);
-            SharedProps.print("amount_balanced_from_margin set to: "+amount_balanced_from_margin);
-            break;
-          case "amount_balanced_ratio":
-          amount_balanced_ratio = Double.valueOf(config[1]);
-            SharedProps.print("amount_balanced_ratio set to: "+amount_balanced_ratio);
             break;
 
           case "amount_bonus":
             amount_bonus = Double.valueOf(config[1]);
             SharedProps.print("amount_bonus set to: "+amount_bonus);
-            break;
-
-          
-          case "withoutMA":
-            withoutMA = config[1].equals("true");
-            SharedProps.print("withoutMA set to: "+withoutMA);
-            break;
-          case "ma_time_divider":
-            ma_time_divider = Double.valueOf(config[1]);
-            SharedProps.print("ma_time_divider set to: "+ma_time_divider);
-            break;
-
-          case "active_price_dif":
-            active_price_dif = config[1].equals("true");
-            SharedProps.print("active_price_dif set to: "+active_price_dif);
-            break;
-          case "withoutPriceDifference":
-            withoutPriceDifference = config[1].equals("true");
-            SharedProps.print("withoutPriceDifference set to: "+withoutPriceDifference);
-            break;
-          case "price_diff_multiplier":
-            price_diff_multiplier = Double.valueOf(config[1]);
-            SharedProps.print("price_diff_multiplier set to: "+price_diff_multiplier);
             break;
 
           case "emailReports":
@@ -382,45 +221,6 @@ public class StrategyConfigs {
           case "reportEmail":
             reportEmail = config[1];
             SharedProps.print("reportEmail set to: "+reportEmail);
-            break;
-
-          case "withoutCCI":
-            withoutCCI = config[1].equals("true");
-            SharedProps.print("withoutCCI set to: "+withoutCCI);
-            break;
-          case "CCIlevelStart":
-            CCIlevelStart = Double.valueOf(config[1]);
-            SharedProps.print("CCIlevelStart set to: "+CCIlevelStart);
-            break;
-          case "CCIlevel":
-            CCIlevel = Double.valueOf(config[1]);
-            SharedProps.print("CCIlevel set to: "+CCIlevel);
-            break;
-
-
-          case "active_ema_overlap":
-            active_ema_overlap = config[1].equals("true");
-            SharedProps.print("active_ema_overlap set to: "+active_ema_overlap);
-            break;
-          case "ema_overlap_bars_compared":
-            ema_overlap_bars_compared = Integer.valueOf(config[1]);
-            SharedProps.print("ema_overlap_bars_compared set to: "+ema_overlap_bars_compared);
-            break;
-          case "ema_overlap_lvl_1":
-            ema_overlap_lvl_1 = Double.valueOf(config[1]);
-            SharedProps.print("ema_overlap_lvl_1 set to: "+ema_overlap_lvl_1);
-            break;
-          case "ema_overlap_lvl_2":
-            ema_overlap_lvl_2 = Double.valueOf(config[1]);
-            SharedProps.print("ema_overlap_lvl_2 set to: "+ema_overlap_lvl_2);
-            break;
-          case "ema_overlap_lvl_2_active":
-            ema_overlap_lvl_2_active = config[1].equals("true");
-            SharedProps.print("ema_overlap_lvl_2_active set to: "+ema_overlap_lvl_2_active);
-            break;
-          case "ema_overlap_lvl_3":
-            ema_overlap_lvl_3 = Double.valueOf(config[1]);
-            SharedProps.print("ema_overlap_lvl_3 set to: "+ema_overlap_lvl_3);
             break;
   
           default : //Optional
@@ -493,10 +293,7 @@ public class StrategyConfigs {
     SharedProps.print("gainbase chg: from "+gainBase+" to "+v);
     gainBase = v;
   }
-  public synchronized double get_amount(){
-    return amount;
-  }
-  public synchronized void set_amount(double v){
-    amount = v;
+  public synchronized double get_amount() {
+    return amount_value_fixed;
   }
 }
