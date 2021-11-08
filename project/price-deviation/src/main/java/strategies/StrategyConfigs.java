@@ -61,7 +61,7 @@ public class StrategyConfigs {
   public double gain_close_overloss_atleast_percent = 1.0005;
   @Configurable("Gain close on over-loss close amount")
   public double gain_close_overloss_close_ratio = 0.50;
-  
+
   @Configurable("Gain close fixed applied at above leverage")
   public double gain_close_fixed_from_leverage = 15;
   @Configurable("Gain close fixed percentage above gain-base")
@@ -80,7 +80,9 @@ public class StrategyConfigs {
   public double merge_distance_std_dev_divider = 3;
   @Configurable("Merge followup step muliplier")
   public double merge_followup_step_muliplier = 2.25;
-  
+  @Configurable("Merge close negative-side step multiplier")
+  public double merge_close_neg_side_multiplier = 1.5;
+
   @Configurable("Open new order at negative distance of StdDev divider")
   public double open_new_std_dev_divider = 5;
   @Configurable("Open follow up order at positive distance by step multiplier")
@@ -198,7 +200,7 @@ public class StrategyConfigs {
           trail_step_1st_divider = Double.valueOf(config[1]);
             SharedProps.print("trail_step_1st_divider set to: "+trail_step_1st_divider);
             break;
-      
+
           case "trail_step_rest_plus_gain":
           trail_step_rest_plus_gain = Double.valueOf(config[1]);
             SharedProps.print("trail_step_rest_plus_gain set to: "+trail_step_rest_plus_gain);
@@ -257,6 +259,10 @@ public class StrategyConfigs {
             merge_followup_step_muliplier = Double.valueOf(config[1]);
             SharedProps.print("merge_followup_step_muliplier set to: "+merge_followup_step_muliplier);
             break;
+          case "merge_close_neg_side_multiplier":
+            merge_close_neg_side_multiplier = Double.valueOf(config[1]);
+            SharedProps.print("merge_close_neg_side_multiplier set to: "+merge_close_neg_side_multiplier);
+            break;
           case "merge_max":
             merge_max = Double.valueOf(config[1]);
             SharedProps.print("merge_max set to: "+merge_max);
@@ -281,12 +287,12 @@ public class StrategyConfigs {
             reportName = config[1];
             SharedProps.print("reportName set to: "+reportName);
             break;
-          
+
           case "reportEmail":
             reportEmail = config[1];
             SharedProps.print("reportEmail set to: "+reportEmail);
             break;
-  
+
           default : //Optional
             //Statements
         }
