@@ -56,20 +56,20 @@ public class StrategyConfigs {
   @Configurable("Gain close required count")
   public int gain_close_count = 3;
   @Configurable("Gain close on over-loss percentage")
-  public double gain_close_overloss_percent = 1/3;
+  public double gain_close_overloss_percent = 0.01;
   @Configurable("Gain close on over-loss at least percentage value gain")
   public double gain_close_overloss_atleast_percent = 1.0005;
   @Configurable("Gain close on over-loss close amount")
   public double gain_close_overloss_close_ratio = 0.50;
 
   @Configurable("Gain close fixed applied at above leverage")
-  public double gain_close_fixed_from_leverage = 15;
+  public double gain_close_fixed_from_leverage = 66;
   @Configurable("Gain close fixed percentage above gain-base")
-  public double gain_close_fixed_percent = 1.05;
+  public double gain_close_fixed_percent = 1.33;
 
   public double amount = 0.001;
   @Configurable("Fixed Acc.Currency value for 0.001 amt")
-  public double amount_value_fixed = 2;
+  public double amount_value_fixed = 15.00;
 
   @Configurable("Bonus amount transparent")
   public double amount_bonus = 0;
@@ -77,52 +77,62 @@ public class StrategyConfigs {
   @Configurable("Merge max")
   public double merge_max = 10;
   @Configurable("Merge distance StdDev divider")
-  public double merge_distance_std_dev_divider = 3;
+  public double merge_distance_std_dev_divider = 2.0;
   @Configurable("Merge followup step muliplier")
-  public double merge_followup_step_muliplier = 2.25;
+  public double merge_followup_step_muliplier = 4.50;
   @Configurable("Merge close negative-side step multiplier")
-  public double merge_close_neg_side_multiplier = 1.5;
+  public double merge_close_neg_side_multiplier = 5.00;
 
   @Configurable("Open new order at negative distance of StdDev divider")
-  public double open_new_std_dev_divider = 5;
-  @Configurable("Open follow up order at positive distance by step multiplier")
-  public double open_followup_step_muliplier = 2.5;
-  @Configurable("Open support side ration")
+  public double open_new_std_dev_divider = 3.0;
+
+  @Configurable("Open follow up check from positive")
+  public boolean open_followup_check_from_positive = false;
+  
+  @Configurable("Open follow up require distance step at amount-less")
+  public double open_followup_step_less_muliplier = 2.00;
+  @Configurable("Open follow up require distance first-step")
+  public double open_followup_step_first_muliplier = 6.50;
+  @Configurable("Open follow up require distance by amount-difference")
+  public double open_followup_step_muliplier = 7.20;
+  @Configurable("Open follow up require distance growth-rate")
+  public double open_followup_require_growth_rate = 0.10;
+
+  @Configurable("Open support side ratio")
   public double open_support_side_ratio = 1.00;
+  @Configurable("Open support at amount difference")
+  public double open_support_amt_diff = 1.00;
+  @Configurable("Positive order at step multiplier")
+  public double positive_order_step_multiplier = 0.00;
 
   @Configurable("Profitable ratio min of StdDev on min step")
-  public double profitable_ratio_min = 4;
+  public double profitable_ratio_min = 12;
   @Configurable("Profitable ratio max of StdDev on min step")
-  public double profitable_ratio_max = 8;
+  public double profitable_ratio_max = 20;
   @Configurable("Profitable ratio chg from min to max")
-  public double profitable_ratio_chg = 0.01;
+  public double profitable_ratio_chg = 0.2;
   @Configurable("Profitable ratios good for bars in history")
   public int profitable_ratio_good_for_bars = 1;
 
   @Configurable("Standard deviation minutes timePeriod")
-  public int std_dev_time = 168;
+  public int std_dev_time = 960;
   @Configurable("Standard deviation Period")
   public Period std_dev_period = Period.ONE_HOUR;
 
   @Configurable("trail step min pip")
-  public double trail_step_1st_min = 6.00;
+  public double trail_step_1st_min = 1.30;
   @Configurable("trail step 1st divider of min")
-  public double trail_step_1st_divider = 2;
+  public double trail_step_1st_divider = 2.00;
+  @Configurable("trail step entry multiplier")
+  public double trail_step_entry_multiplier = 4.0;
   @Configurable("trail step rest plus gain muliplier")
-  public double trail_step_rest_plus_gain = 0.10;
+  public double trail_step_rest_plus_gain = 0.33;
 
   @Configurable("Price Difference multiplier")
   public double price_diff_multiplier = 0.90;
 
   @Configurable("Execute inst check ms")
-  public long execute_inst_ms = 100;
-
-  @Configurable("manage Signals")
-  public boolean manageSignals = false;
-
-  @Configurable("tick with different price")
-  public boolean onlyDifferentTick = false;
-
+  public long execute_inst_ms = 80;
 
   @Configurable("email Reports")
   public boolean emailReports = false;
@@ -200,6 +210,10 @@ public class StrategyConfigs {
           trail_step_1st_divider = Double.valueOf(config[1]);
             SharedProps.print("trail_step_1st_divider set to: "+trail_step_1st_divider);
             break;
+          case "trail_step_entry_multiplier":
+            trail_step_entry_multiplier = Double.valueOf(config[1]);
+            SharedProps.print("trail_step_entry_multiplier set to: "+trail_step_entry_multiplier);
+            break;
 
           case "trail_step_rest_plus_gain":
           trail_step_rest_plus_gain = Double.valueOf(config[1]);
@@ -210,13 +224,37 @@ public class StrategyConfigs {
             open_new_std_dev_divider = Double.valueOf(config[1]);
             SharedProps.print("open_new_std_dev_divider set to: "+open_new_std_dev_divider);
             break;
+          case "open_followup_check_from_positive":
+            open_followup_check_from_positive = config[1].equals("true");
+            SharedProps.print("open_followup_check_from_positive set to: "+open_followup_check_from_positive);
+            break;
+          case "open_followup_step_less_muliplier":
+            open_followup_step_less_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("open_followup_step_less_muliplier set to: "+open_followup_step_less_muliplier);
+            break;
+          case "open_followup_step_first_muliplier":
+            open_followup_step_first_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("open_followup_step_first_muliplier set to: "+open_followup_step_first_muliplier);
+            break;
           case "open_followup_step_muliplier":
             open_followup_step_muliplier = Double.valueOf(config[1]);
             SharedProps.print("open_followup_step_muliplier set to: "+open_followup_step_muliplier);
             break;
+          case "open_followup_require_growth_rate":
+            open_followup_require_growth_rate = Double.valueOf(config[1]);
+            SharedProps.print("open_followup_require_growth_rate set to: "+open_followup_require_growth_rate);
+            break;
           case "open_support_side_ratio":
             open_support_side_ratio = Double.valueOf(config[1]);
             SharedProps.print("open_support_side_ratio set to: "+open_support_side_ratio);
+            break;
+          case "open_support_amt_diff":
+            open_support_amt_diff = Double.valueOf(config[1]);
+            SharedProps.print("open_support_amt_diff set to: "+open_support_amt_diff);
+            break;
+          case "positive_order_step_multiplier":
+            positive_order_step_multiplier = Double.valueOf(config[1]);
+            SharedProps.print("positive_order_step_multiplier set to: "+positive_order_step_multiplier);
             break;
 
           case "gain_close_count":

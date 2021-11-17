@@ -84,9 +84,9 @@ public class PriceDeviation {
           SharedProps.print(e.getMessage());
         }
 
-      } else if(acc_man.pid_restart){
+      } else if(acc_man.pid_restart.get()){
         SharedProps.print("Strategy restarting AccountManagement\n");
-        acc_man.stop_run=true;
+        acc_man.stop_run.set(true);
         try{
           acc_man.client.stopStrategy(acc_man.strategyId);
         }catch (Exception e){}
@@ -95,7 +95,7 @@ public class PriceDeviation {
           client = null;
         continue;
       }
-      acc_man.pid_restart = true;
+      acc_man.pid_restart.set(true);
 
       for(Instrument inst : StrategyConfigs.instruments) {
         if(!strategies.containsKey(inst.toString())) {
@@ -119,9 +119,9 @@ public class PriceDeviation {
 
         } else {
           strategy = strategies.get(inst.toString());
-          if(strategy.pid_restart) {
+          if(strategy.pid_restart.get()) {
             SharedProps.print("Strategy restarting "+inst.toString());
-            strategy.stop_run=true;
+            strategy.stop_run.set(true);
             try{
               strategy.client.stopStrategy(strategy.strategyId);
             }catch (Exception e){}
@@ -137,7 +137,7 @@ public class PriceDeviation {
             strategies.remove(inst.toString());
           }
         }
-        strategy.pid_restart = true;
+        strategy.pid_restart.set(true);
       }
     }
   }

@@ -14,11 +14,12 @@ import java.io.FileWriter;
 import java.util.Calendar;
 import java.util.TimeZone;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AccountManagement implements IStrategy{
 
-  public boolean stop_run = false;
-  public boolean pid_restart = false;
+  public AtomicBoolean stop_run = new AtomicBoolean(false);
+  public AtomicBoolean pid_restart = new AtomicBoolean(false);
 
   private StrategyConfigs configs;
   public IClient client;
@@ -63,7 +64,7 @@ public class AccountManagement implements IStrategy{
       double amount = 1;
       int counted_inst = StrategyConfigs.instruments.length;
       if(counted_inst > 0) {
-        amount = ((eq - configs.amount_bonus) / (counted_inst * (configs.merge_max + 1)))
+        amount = ((eq - configs.amount_bonus) / (counted_inst * (configs.merge_max)))
                   / (configs.amount_value_fixed * 2);
       }
       amount /= 1000;
@@ -92,7 +93,8 @@ public class AccountManagement implements IStrategy{
           }
           break;
         default:
-          SharedProps.print("acc - Message: " + message.toString());
+          if(configs.debug)
+            SharedProps.print("acc - Message: " + message.toString());
           break;
       }
     } catch (Exception e) {
@@ -105,10 +107,10 @@ public class AccountManagement implements IStrategy{
     long five_minutes_timer = 0;
     long one_minute_timer = 0;
     long ten_secs_timer = 0;
-    while(!stop_run){
+    while(!stop_run.get()){
       commit_log();
       try{
-        pid_restart=false;
+        pid_restart.set(false);
         Thread.sleep(5000);
         if(SharedProps.get_sys_ts() - one_minute_timer > 60000) {
           configs.getConfigs();
@@ -278,9 +280,6 @@ public class AccountManagement implements IStrategy{
       double o_loss = 0;
       for (IOrder o : engine.getOrders()) {
 
-        if(o.getLabel().contains("Signal:") && !configs.manageSignals)
-          continue;
-
         if(o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
           continue;
 
@@ -301,7 +300,7 @@ public class AccountManagement implements IStrategy{
         atleast = (tick.getAsk()/(inst_pip/10))*0.00001;
         if(Double.compare(atleast, 1) < 0)
           atleast = 1/atleast;
-        atleast *= configs.trail_step_1st_min;//
+        atleast += configs.trail_step_1st_min;
         if(Double.compare(atleast, configs.trail_step_1st_min) < 0)
           atleast = configs.trail_step_1st_min;
         if(Double.compare(o.getProfitLossInPips(), -atleast) >= 0)
@@ -379,16 +378,16 @@ public class AccountManagement implements IStrategy{
     List<IOrder> orders = new ArrayList<>();
     try {
       for (IOrder o : engine.getOrders()) {
-
-        if(!configs.manageSignals && o.getLabel().contains("Signal:"))
-          continue;
         if(o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
           continue;
         if(o.getOrderCommand() != OrderCommand.SELL && o.getOrderCommand() != OrderCommand.BUY)
           continue;
 
         sl_price = o.getStopLossPrice();
-        if(Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0) {
+        Instrument inst = o.getInstrument();
+        double atleast = configs.trail_step_1st_min + (getOffersDifference(inst)/inst.getPipValue()) + 0.2;
+        if(Double.compare(o.getProfitLossInPips(), -atleast) < 0 &&
+           (Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0)) {
           orders.add(o);
         }
       }
@@ -473,6 +472,10 @@ public class AccountManagement implements IStrategy{
         inst_pip_v = inst.getPipValue();
         open_price = p.getOpenPrice();
         pip_acc_v = p.getProfitLossInAccountCurrency() / p.getProfitLossInPips();
+        if(Double.isNaN(pip_acc_v)) {
+          profit_loss = null;
+          break;
+        }
 
         if(cmd == OrderCommand.BUY && open_price < sl_price) {
           add_profit = ((getLastTick(inst).getBid()-sl_price)/inst_pip_v)*pip_acc_v;
@@ -488,20 +491,25 @@ public class AccountManagement implements IStrategy{
     } catch (Exception e) {
       SharedProps.print("getOrdersProfit E: "+e.getMessage()+" " +
           "Thread: " + Thread.currentThread().getName() + " " + e);
+      profit_loss = null;
     }
     return profit_loss;
   }
 
-  private ITick getLastTick(Instrument instrument) {
-    ITick tick;
-    for(int i=0;i<3;i++){
+  //
+  private ITick getLastTick(Instrument inst) {
+    for(;;) {
       try{
-        tick = history.getLastTick(instrument);
-        if(tick!=null) return tick;
-        Thread.sleep(1);
+        ITick t = history.getLastTick(inst);
+        if(t != null && !Double.isNaN(t.getAsk()) && !Double.isNaN(t.getBid()))
+          return t;
       } catch (Exception e){}
+      try{ Thread.sleep(2); } catch (Exception e){}
     }
-    return null;
+  }
+  private double getOffersDifference(Instrument inst) {
+    ITick t = getLastTick(inst);
+    return t.getAsk()-t.getBid();
   }
 
   //
@@ -581,6 +589,6 @@ public class AccountManagement implements IStrategy{
   public void onTick(Instrument instrument, ITick tick) {}
   @Override
   public void onStop(){
-    stop_run = true;
+    stop_run.set(true);
   }
 }
