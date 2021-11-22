@@ -12,6 +12,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 public class PriceDeviationInstrument implements IStrategy {
@@ -59,6 +60,7 @@ public class PriceDeviationInstrument implements IStrategy {
   private double inst_pip_dist = 0;
   private HashMap<String, Double> inst_pip_dists = new HashMap<>();
 
+  private ConcurrentHashMap<String, Double> orders_trailingstep = new ConcurrentHashMap<>();
 
   @Override
   public void onAccount(IAccount account) {}
@@ -209,6 +211,7 @@ public class PriceDeviationInstrument implements IStrategy {
 
   //
   private void manageInstrument() throws Exception {
+    List<IOrder> orders_raw = new ArrayList<>();
     List<IOrder> orders = new ArrayList<>();
     List<IOrder> mergeBuyOrders = new ArrayList<>();
     List<IOrder> mergeSellOrders = new ArrayList<>();
@@ -216,7 +219,8 @@ public class PriceDeviationInstrument implements IStrategy {
     OrderCommand cmd;
     long ts = SharedProps.get_sys_ts();
 
-    double o_profit, trailingStepPip, lastTickBid, lastTickAsk, trailSLprice, trailingStep;
+    double o_profit, lastTickBid, lastTickAsk, trailSLprice, trailingStep;
+    ITick lastTick;
 
     double amt_buy = 0.0;
     double amt_sell = 0.0;
@@ -229,16 +233,88 @@ public class PriceDeviationInstrument implements IStrategy {
         amt_sell += o.getAmount();
       }
       if(o.getState() == IOrder.State.FILLED && (cmd == OrderCommand.BUY || cmd == OrderCommand.SELL)) {
-        orders.add(o);
+        if(configs.trail_managed) {
+          orders_raw.add(o);
+        } else {
+          orders.add(o);
+        }
         if(!SharedProps.oBusy.containsKey(o.getId()))
           SharedProps.oBusy.put(o.getId(), ts);
       }
     }
-    amt_buy = SharedProps.round(amt_buy, 3);
-    amt_sell = SharedProps.round(amt_sell, 3);
-
+    
     double step_1st = getFirstStep();
     double step_1st_pip = step_1st/inst_pip;
+
+    for(IOrder o : orders_raw) {
+      double sl = orders_trailingstep.getOrDefault(o.getId(), 0.0);
+      if(Double.compare(sl, 0.0) > 0) {
+        if(ts - SharedProps.oBusy.get(o.getId()) < 888)
+          continue;
+        lastTick = getLastTick();
+        double diff = 0.0;
+        double amt = 0.0;
+        double price = 0.0;
+        boolean closing = false;
+        boolean clear = false;
+        if(o.getOrderCommand() == OrderCommand.BUY) {// && Double.compare(amt_buy, amt_sell) > 0) {
+          price = lastTick.getBid();
+          diff = sl - price;
+          if(Double.compare(diff, 0.0) >= 0) {
+            if(Double.compare(diff, step_1st) < 0) {
+              closing = true;
+              //amt = amt_buy - amt_sell;
+              //if(Double.compare(amt, 0.001) < 0)
+                //amt = 0.001;
+              //if(Double.compare(amt, o.getAmount()) > 0) {
+                amt = 0.0;
+                amt_buy -= o.getAmount();
+              //} else {
+                //amt_buy -= amt;
+              //}
+            } else {
+              clear = true;
+            }
+          }
+        } else if(o.getOrderCommand() == OrderCommand.SELL) {// && Double.compare(amt_sell, amt_buy) > 0) {
+          price = lastTick.getAsk(); 
+          diff = price - sl;
+          if(Double.compare(diff, 0.0) >= 0) {
+            if(Double.compare(diff, step_1st) < 0) {
+              closing = true;
+              //amt = amt_sell - amt_buy;
+              //if(Double.compare(amt, 0.001) < 0)
+                //amt = 0.001;
+              //if(Double.compare(amt, o.getAmount()) > 0) {
+                amt = 0.0;
+                amt_sell -= o.getAmount();
+              //} else {
+                //amt_sell -= amt;
+              //}
+            } else {
+              clear = true;
+            }
+          }
+        }
+        if(clear) {
+          orders_trailingstep.remove(o.getId());
+        } else if(closing) {
+          amt = SharedProps.round(amt, 6);
+          SharedProps.oBusy.put(o.getId(), ts + 4000);
+          SharedProps.print(
+            inst_str + " Closing SL at price=" + price + " sl=" + sl +
+            " diff=" + SharedProps.round(diff/inst_pip, 2) +
+            " amt=" + amt + " " + o
+          );
+          executeClose(o, amt, price);
+          continue;
+        }
+      }
+      orders.add(o);
+    }
+
+    amt_buy = SharedProps.round(amt_buy, 3);
+    amt_sell = SharedProps.round(amt_sell, 3);
 
     if(inst_init.get() && orders.size() > 1) {
       for( IOrder o : orders) {
@@ -335,39 +411,47 @@ public class PriceDeviationInstrument implements IStrategy {
       }
       mergeBuyOrders.clear();
 
-      double sl = pos.getStopLossPrice();
+      if(neg_count == 1 && ts - SharedProps.oBusy.get(neg.getId()) < 888)
+        neg_count = 0;
+
+      boolean merge = false;
+      double sl = orders_trailingstep.getOrDefault(pos.getId(), 0.0);
       if(neg_count == 1 &&
          pos.getOrderCommand() != neg.getOrderCommand() &&
-         Double.compare(pos.getTrailingStep(), 0.0) > 0 &&
-         Double.compare(sl, 0.0) != 0 &&
-         Double.compare(pos.getAmount(), neg.getAmount()) > 0 &&
-         Double.compare(pos.getProfitLossInAccountCurrency(), neg.getProfitLossInAccountCurrency()) > 0) {
-        double pos_dif, neg_dif;
-        ITick t = getLastTick();
-        if(pos.getOrderCommand() == OrderCommand.BUY) {
-          pos_dif = sl - pos.getOpenPrice();
-          neg_dif = t.getAsk() - neg.getOpenPrice();
-        } else {
-          pos_dif = pos.getOpenPrice() - sl;
-          neg_dif = neg.getOpenPrice() - t.getBid();
-        }
-        pos_dif *= (pos.getAmount()*1000);
-        neg_dif *= (neg.getAmount()*1000);
-        pos_dif -= getCommisionPip(pos) * inst_pip;
-        neg_dif -= getCommisionPip(neg) * inst_pip;
+         Double.compare(sl, 0.0) > 0 &&
+         Double.compare(pos.getAmount(), neg.getAmount()) > 0) {
+        if(Double.compare(pos.getProfitLossInAccountCurrency(), neg.getProfitLossInAccountCurrency()) > 0) {
+          double pos_dif, neg_dif;
+          lastTick = getLastTick();
+          double price;
+          if(pos.getOrderCommand() == OrderCommand.BUY) {
+            pos_dif = sl - pos.getOpenPrice();
+            price = lastTick.getBid();
+            neg_dif = price - neg.getOpenPrice();
+          } else {
+            pos_dif = pos.getOpenPrice() - sl;
+            price = lastTick.getAsk();
+            neg_dif = neg.getOpenPrice() - price;
+          }
+          pos_dif *= (pos.getAmount()*1000);
+          neg_dif *= (neg.getAmount()*1000);
+          pos_dif -= getCommisionPip(pos) * inst_pip;
+          neg_dif -= getCommisionPip(neg) * inst_pip;
 
-        boolean merge = Double.compare(pos_dif - step_1st * configs.merge_close_neg_side_multiplier, neg_dif) > 0;
-        if(merge || configs.debug) {
-          SharedProps.print(
-            inst_str + " Merge " + (merge ? "" : "nominated ") + "pos-close" +
-            " pos_dif=" + pos_dif + " neg_dif=" + neg_dif + " diff=" +
-            SharedProps.round((pos_dif - step_1st * configs.merge_close_neg_side_multiplier) - neg_dif, inst_scale + 2) +
-            " @ " + pos.getProfitLossInAccountCurrency() + " > " + neg.getProfitLossInAccountCurrency()
-          );
-        }
-        if(merge) {
-          executeCloseMergable(neg);
-          orders.remove(neg);
+          merge = Double.compare(pos_dif - step_1st * configs.merge_close_neg_side_multiplier, neg_dif) > 0;
+          if(merge || configs.debug) {
+            SharedProps.print(
+              inst_str + " Merge " + (merge ? "" : "nominated ") + "pos-close" +
+              " pos_dif=" + pos_dif + " neg_dif=" + neg_dif + " diff=" +
+              SharedProps.round((pos_dif - step_1st * configs.merge_close_neg_side_multiplier) - neg_dif, inst_scale + 2) +
+              " @ " + pos.getProfitLossInAccountCurrency() + " > " + neg.getProfitLossInAccountCurrency()
+            );
+          }
+          if(merge) {
+            SharedProps.oBusy.put(neg.getId(), ts + 4000);
+            executeClose(neg, 0, price);
+            orders.remove(neg);
+          }
         }
       }
     }
@@ -397,6 +481,7 @@ public class PriceDeviationInstrument implements IStrategy {
     }
 
     ////
+    double one_amt = getAmount(1);
     for( IOrder o : orders) {
       if(Double.compare(o.getProfitLossInPips(), step_1st_pip) <= 0 ||
          ts - SharedProps.oBusy.get(o.getId()) < 888) {
@@ -404,7 +489,9 @@ public class PriceDeviationInstrument implements IStrategy {
       }
       cmd = o.getOrderCommand();
       if(Double.compare(amt_buy, amt_sell) == 0 ||
-         (cmd == OrderCommand.BUY ? (Double.compare(amt_buy, amt_sell) < 0) : (Double.compare(amt_buy, amt_sell) > 0)) )
+         (cmd == OrderCommand.BUY
+          ? (Double.compare(amt_buy - configs.trail_from_diff_amount_muliplier * one_amt, amt_sell) < 0)
+          : (Double.compare(amt_sell - configs.trail_from_diff_amount_muliplier * one_amt, amt_buy) < 0)) )
         continue;
 
       trailingStep = step_1st;
@@ -419,31 +506,59 @@ public class PriceDeviationInstrument implements IStrategy {
       if(configs.debug)
         SharedProps.print(inst_str + " cost:"+SharedProps.round(o_cost, 2) +
                                      " step:"+SharedProps.round((trailingStep/inst_pip), 2));
-      trailingStepPip = SharedProps.round((trailingStep/inst_pip)*1.2, inst_scale);
-      ITick t = getLastTick();
-      lastTickBid = t.getBid();
-      lastTickAsk = t.getAsk();
-
+      lastTick = getLastTick();
+      boolean update_sl = false;
+      trailSLprice = 0.0;
       if (cmd == OrderCommand.BUY) {
+        lastTickBid = lastTick.getBid();
         trailSLprice = lastTickBid - trailingStep; // - (lastTickAsk - lastTickBid);
         trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
         if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) < 0) {
-          if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-            if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
-              executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
+          if(configs.trail_managed) {
+            double sl = orders_trailingstep.getOrDefault(o.getId(), 0.0);
+            update_sl = Double.compare(sl, 0.0) == 0;
+            if(!update_sl)
+              update_sl = Double.compare(sl, trailSLprice) < 0;
+          } else {
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
+                update_sl = true;
+            }
           }
         }
 
       } else if (cmd == OrderCommand.SELL) {
+        lastTickAsk = lastTick.getAsk();
         trailSLprice = lastTickAsk + trailingStep; // + (lastTickAsk - lastTickBid);
         trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
         if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) > 0) {
-          if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-            if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
-              executeTrailOrder(cmd, o, trailSLprice, trailingStepPip);
+          if(configs.trail_managed) {
+            double sl = orders_trailingstep.getOrDefault(o.getId(), 0.0);
+            update_sl = Double.compare(sl, 0.0) == 0;
+            if(!update_sl)
+              update_sl = Double.compare(sl, trailSLprice) > 0;
+          } else {
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
+                update_sl = true;
+            }
           }
+        }
+      }
+      if(update_sl && Double.compare(trailSLprice, 0.0) > 0) {
+        if(configs.debug) {
+          SharedProps.print(
+            inst_str + " Updating SL to=" +
+            SharedProps.round(trailSLprice, inst_scale + 1) +
+            " step=" + SharedProps.round(trailingStep, inst_scale + 1) +
+            " " + o
+          );
+        }
+        orders_trailingstep.put(o.getId(), trailSLprice);
+        if(!configs.trail_managed) {
+          executeTrailOrder(cmd, o, trailSLprice, SharedProps.round((trailingStep/inst_pip)*1.2, inst_scale));
         }
       }
 
@@ -685,15 +800,22 @@ public class PriceDeviationInstrument implements IStrategy {
       o_cost = o_diff + getCommisionPip(o);
       if(op_neg)
         o_cost *= -1;
-      if(Double.compare(o_profit + o_cost, 0) < 0 &&
-         Double.compare(o.getTrailingStep(), 0) == 0)
+      if(Double.compare(o_profit + o_cost, 0) < 0)
         continue;
+
       cmd = o.getOrderCommand();
+      double sl = configs.trail_managed
+        ? orders_trailingstep.getOrDefault(o.getId(), 0.0)
+        : o.getStopLossPrice();
+
       boolean flw_possible =
         configs.open_followup_check_from_positive ||
         Double.compare(amt_buy, amt_sell) == 0 ||
-        (cmd == OrderCommand.BUY ? (Double.compare(amt_buy, amt_sell) < 0) : (Double.compare(amt_buy, amt_sell) > 0)) ||
-        Double.compare(o.getTrailingStep(), 0) > 0;
+         (cmd == OrderCommand.BUY
+          ? (Double.compare(amt_buy - configs.trail_from_diff_amount_muliplier * amt, amt_sell) < 0)
+          : (Double.compare(amt_sell - configs.trail_from_diff_amount_muliplier * amt, amt_buy) < 0)) ||
+        Double.compare(sl, 0) > 0;
+
       double reach = 0;
       double require = configs.open_followup_step_muliplier;
       if(flw_possible) {
@@ -862,30 +984,36 @@ public class PriceDeviationInstrument implements IStrategy {
   }
 
   //
-  private void executeCloseMergable(IOrder order) {
+  private void executeClose(IOrder order, double _amt, double _price) {
     new Thread(new Runnable() {
       @Override
       public void run() {
         try {
-          context.executeTask(new CloseMergable(order));
+          context.executeTask(new CloseProceed(order, _amt, _price));
         } catch (Exception e) {
+          SharedProps.oBusy.put(order.getId(), SharedProps.get_sys_ts() - 1000);
         }
       }
     }).start();
   }
 
-  private class CloseMergable implements Callable<IOrder> {
+  private class CloseProceed implements Callable<IOrder> {
     private final IOrder o;
+    private final double amt;
+    private final double price;
 
-    public CloseMergable(IOrder order) {
+    public CloseProceed(IOrder order, double _amt, double _price) {
       o = order;
+      amt = _amt;
+      price = _price;
     }
     public IOrder call() {
       try {
-        o.close();
+        o.close(amt, price, 0.1);
       } catch (Exception e){
-        SharedProps.print("CloseMergable call() E: "+e.getMessage()+" " +
+        SharedProps.print("CloseProceed call() E: "+e.getMessage()+" " +
           "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
+        SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() - 1000);
       }
       return o;
     }
@@ -896,16 +1024,16 @@ public class PriceDeviationInstrument implements IStrategy {
   private ITick getLastTick() {
     for(;;) {
       try{
-        ITick t = history.getLastTick(inst);
-        if(t != null && !Double.isNaN(t.getAsk()) && !Double.isNaN(t.getBid()))
-          return t;
+        ITick lastTick = history.getLastTick(inst);
+        if(lastTick != null && !Double.isNaN(lastTick.getAsk()) && !Double.isNaN(lastTick.getBid()))
+          return lastTick;
       } catch (Exception e){}
       try{ Thread.sleep(2); } catch (Exception e){}
     }
   }
   private double getOffersDifference() {
-    ITick t = getLastTick();
-    return t.getAsk()-t.getBid();
+    ITick lastTick = getLastTick();
+    return lastTick.getAsk()-lastTick.getBid();
   }
   private double getCommisionPip(IOrder o) {
     try { 
@@ -1466,69 +1594,71 @@ public class PriceDeviationInstrument implements IStrategy {
 
         case ORDER_SUBMIT_OK:
           if(configs.debug)
-            SharedProps.print("Order submit ok: " + message.getOrder());
+            SharedProps.print("Order submit ok: " + order);
           onTick(o_inst, null);
           break;
         case ORDER_SUBMIT_REJECTED:
           if(configs.debug)
-            SharedProps.print("Order submit rejected: " + message.getOrder());
+            SharedProps.print("Order submit rejected: " + order);
           inst_busy_exec_ts.set(SharedProps.get_sys_ts() + 10000);
           onTick(o_inst, null);
           break;
 
         case ORDER_CHANGED_OK:
           if(configs.debug)
-            SharedProps.print("Order changed ok: " + message.getOrder());
+            SharedProps.print("Order changed ok: " + order);
           onTick(o_inst, null);
           break;
         case ORDER_CHANGED_REJECTED:
-          SharedProps.print("Order change rejected: " + message.getOrder());
+          SharedProps.print("Order change rejected: " + order);
           onTick(o_inst, null);
           break;
 
         case ORDERS_MERGE_OK:
           if(configs.debug)
-            SharedProps.print("Orders merged ok: " + message.getOrder());
+            SharedProps.print("Orders merged ok: " + order);
+          orders_trailingstep.remove(order.getId());
           onTick(o_inst, null);
           break;
         case ORDERS_MERGE_REJECTED:
           if(configs.debug)
-            SharedProps.print("Orders merge rejected: " + message.getOrder());
+            SharedProps.print("Orders merge rejected: " + order);
           onTick(o_inst, null);
           break;
 
         case ORDER_FILL_OK :
           if(configs.debug)
-            SharedProps.print("Order fill ok: " + message.getOrder());
+            SharedProps.print("Order fill ok: " + order);
           inst_busy_exec_ts.set(SharedProps.get_sys_ts());
           onTick(o_inst, null);
           break;
         case ORDER_FILL_REJECTED:
           if(configs.debug)
-            SharedProps.print("Order fill rejected: " + message.getOrder());
+            SharedProps.print("Order fill rejected: " + order);
           inst_busy_exec_ts.set(SharedProps.get_sys_ts() + 10000);
           onTick(o_inst, null);
           break;
 
         case ORDER_CLOSE_OK:
           if(configs.debug)
-            SharedProps.print("Order close ok: " + message.getOrder());
+            SharedProps.print("Order close ok: " + order);
+          orders_trailingstep.remove(order.getId());
           onTick(o_inst, null);
           break;
         case ORDER_CLOSE_REJECTED:
           if(configs.debug)
-            SharedProps.print("Order close rejected: " + message.getOrder());
+            SharedProps.print("Order close rejected: " + order);
           onTick(o_inst, null);
           break;
 
         case STOP_LOSS_LEVEL_CHANGED:
           if(configs.debug)
-            SharedProps.print("ST changed ok: " + message.getOrder());
+            SharedProps.print("ST changed ok: " + order);
           break;
 
         default:
           if(configs.debug)
-            SharedProps.print("default msg-event: " + message.getOrder());
+            SharedProps.print("default msg-event: " + order);
           break;
 
       }

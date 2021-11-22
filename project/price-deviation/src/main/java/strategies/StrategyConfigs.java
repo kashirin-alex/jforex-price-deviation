@@ -119,6 +119,10 @@ public class StrategyConfigs {
   @Configurable("Standard deviation Period")
   public Period std_dev_period = Period.ONE_HOUR;
 
+  @Configurable("trail step managed")
+  public boolean trail_managed = false;
+  @Configurable("trail step from amount differ multiplier")
+  public double trail_from_diff_amount_muliplier = 1.0;
   @Configurable("trail step min pip")
   public double trail_step_1st_min = 1.30;
   @Configurable("trail step 1st divider of min")
@@ -201,7 +205,14 @@ public class StrategyConfigs {
             SharedProps.print("std_dev_time set to: "+std_dev_time);
             break;
 
-
+          case "trail_managed":
+            trail_managed = config[1].equals("true");
+            SharedProps.print("trail_managed set to: "+trail_managed);
+            break;
+          case "trail_from_diff_amount_muliplier":
+            trail_from_diff_amount_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("trail_from_diff_amount_muliplier set to: "+trail_from_diff_amount_muliplier);
+            break;
           case "trail_step_1st_min":
           trail_step_1st_min = Double.valueOf(config[1]);
             SharedProps.print("trail_step_1st_min set to: "+trail_step_1st_min);

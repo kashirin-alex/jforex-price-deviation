@@ -144,7 +144,7 @@ public class AccountManagement implements IStrategy{
   private void freeBusyTPSL(){
     try {
       for (String k : SharedProps.oBusy.keySet()) {
-        if(SharedProps.get_sys_ts()-SharedProps.oBusy.get(k) > 12*60*60*1000)
+        if(SharedProps.get_sys_ts() - SharedProps.oBusy.get(k) > 60*60*1000)
           SharedProps.oBusy.remove(k);
       }
     } catch (Exception e) {
