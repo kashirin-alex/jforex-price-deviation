@@ -37,9 +37,8 @@ public class PriceDeviationInstrument implements IStrategy {
   private String inst_cur_2;
   private double inst_pip;
   private int inst_scale;
-  private double rnd_ratio = 0.0;
   private AtomicBoolean inst_init = new AtomicBoolean(false);
-  
+
   private AtomicLong inst_exec_ts = new AtomicLong(0);
   private AtomicBoolean inst_busy = new AtomicBoolean(false);
   private AtomicLong inst_busy_ts = new AtomicLong(SharedProps.get_sys_ts());
@@ -48,17 +47,6 @@ public class PriceDeviationInstrument implements IStrategy {
 
   private double minFirstStepByInst;
   private long min_1st_step_inst_ts = 0;
-  private long inst_std_dev_ts = 0;
-
-  private HashMap<String, Long> inst_tf_ts = new HashMap<>();
-  private HashMap<String, Double> inst_tf = new HashMap<>();
-  private HashMap<String, Long> inst_tf_gf = new HashMap<>();
-
-  private double inst_timeframe = 0;
-  private HashMap<String, Double> inst_timeframes = new HashMap<>();
-
-  private double inst_pip_dist = 0;
-  private HashMap<String, Double> inst_pip_dists = new HashMap<>();
 
   private ConcurrentHashMap<String, Double> orders_trailingstep = new ConcurrentHashMap<>();
 
@@ -86,7 +74,6 @@ public class PriceDeviationInstrument implements IStrategy {
     context.setSubscribedInstruments(java.util.Collections.singleton(inst), true);
 
     minFirstStepByInst = configs.trail_step_1st_min * inst_pip;
-    SharedProps.inst_std_dev_avg.put(inst_str, Double.NaN);
 
     new Thread(new Runnable() {
       @Override
@@ -97,7 +84,6 @@ public class PriceDeviationInstrument implements IStrategy {
 
   private void runInstrument() {
     int counter = 999;
-    double std_dev;
     long ts = SharedProps.get_sys_ts();
     inst_exec_ts.set(ts + 10000);
     while(!stop_run.get()) {
@@ -112,39 +98,26 @@ public class PriceDeviationInstrument implements IStrategy {
 
       ts = SharedProps.get_sys_ts();
 
-      if(ts-min_1st_step_inst_ts > 60000)
+      if(ts - min_1st_step_inst_ts > 60000)
         setInstFirstStep(ts);
-
-      if(ts-inst_std_dev_ts > 180000)
-        setStdDev(ts);
-
-      std_dev = getStdDevPip();
-      if(Double.isNaN(std_dev))
-        continue;
-
-      setTimeFrames(ts);
 
       if(configs.debug && ++counter == 1000) {
         SharedProps.print(inst_str +
               "|Amt: " + getAmount(1) +
               "|1stStep: " + SharedProps.round(getFirstStep()/inst_pip, 1) +
               "|min1stStep: " + SharedProps.round(minFirstStepByInst,1) +
-              "|StdDevPip: " + SharedProps.round(std_dev,1) +
-              "|pip_dist: " + SharedProps.round(inst_pip_dist/inst_pip,1) +
-              "|diff: " + SharedProps.round(getOffersDifference()/inst_pip, 1) +
-              "|timeframe: " + inst_timeframe
+              "|diff: " + SharedProps.round(getOffersDifference()/inst_pip, 1)
         );
         counter = 0;
       }
-      if(ts-inst_exec_ts.get() < 20000)
-        continue;
-      if(Double.isNaN(inst_timeframe) || Double.compare(inst_timeframe,0) == 0)
+
+      if(ts < inst_exec_ts.get())
         continue;
       if(inst_busy_exec_ts.get() > ts)
         continue;
 
       try {
-        executeInstrument(ts, std_dev);
+        executeInstrument(ts);
       } catch (Exception e) {
         SharedProps.print("executeInstrument E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
@@ -224,7 +197,7 @@ public class PriceDeviationInstrument implements IStrategy {
 
     double amt_buy = 0.0;
     double amt_sell = 0.0;
-  
+
     for(IOrder o : engine.getOrders(inst)) {
       cmd = o.getOrderCommand();
       if(cmd == OrderCommand.BUY || cmd == OrderCommand.PLACE_BID || cmd == OrderCommand.BUYLIMIT || cmd == OrderCommand.BUYSTOP) {
@@ -242,7 +215,9 @@ public class PriceDeviationInstrument implements IStrategy {
           SharedProps.oBusy.put(o.getId(), ts);
       }
     }
-    
+    amt_buy = SharedProps.round(amt_buy, 3);
+    amt_sell = SharedProps.round(amt_sell, 3);
+
     double step_1st = getFirstStep();
     double step_1st_pip = step_1st/inst_pip;
 
@@ -257,40 +232,26 @@ public class PriceDeviationInstrument implements IStrategy {
         double price = 0.0;
         boolean closing = false;
         boolean clear = false;
-        if(o.getOrderCommand() == OrderCommand.BUY) {// && Double.compare(amt_buy, amt_sell) > 0) {
+        if(o.getOrderCommand() == OrderCommand.BUY && Double.compare(amt_buy, amt_sell) > 0) {
           price = lastTick.getBid();
           diff = sl - price;
           if(Double.compare(diff, 0.0) >= 0) {
             if(Double.compare(diff, step_1st) < 0) {
               closing = true;
-              //amt = amt_buy - amt_sell;
-              //if(Double.compare(amt, 0.001) < 0)
-                //amt = 0.001;
-              //if(Double.compare(amt, o.getAmount()) > 0) {
-                amt = 0.0;
-                amt_buy -= o.getAmount();
-              //} else {
-                //amt_buy -= amt;
-              //}
+              amt = 0.0;
+              amt_buy -= o.getAmount();
             } else {
               clear = true;
             }
           }
-        } else if(o.getOrderCommand() == OrderCommand.SELL) {// && Double.compare(amt_sell, amt_buy) > 0) {
-          price = lastTick.getAsk(); 
+        } else if(o.getOrderCommand() == OrderCommand.SELL && Double.compare(amt_sell, amt_buy) > 0) {
+          price = lastTick.getAsk();
           diff = price - sl;
           if(Double.compare(diff, 0.0) >= 0) {
             if(Double.compare(diff, step_1st) < 0) {
               closing = true;
-              //amt = amt_sell - amt_buy;
-              //if(Double.compare(amt, 0.001) < 0)
-                //amt = 0.001;
-              //if(Double.compare(amt, o.getAmount()) > 0) {
-                amt = 0.0;
-                amt_sell -= o.getAmount();
-              //} else {
-                //amt_sell -= amt;
-              //}
+              amt = 0.0;
+              amt_sell -= o.getAmount();
             } else {
               clear = true;
             }
@@ -312,87 +273,8 @@ public class PriceDeviationInstrument implements IStrategy {
       }
       orders.add(o);
     }
-
     amt_buy = SharedProps.round(amt_buy, 3);
     amt_sell = SharedProps.round(amt_sell, 3);
-
-    if(inst_init.get() && orders.size() > 1) {
-      for( IOrder o : orders) {
-        cmd = o.getOrderCommand();
-        if (cmd == OrderCommand.BUY) {
-          mergeBuyOrders.add(o);
-        } else if (cmd == OrderCommand.SELL) {
-          mergeSellOrders.add(o);
-        }
-      }
-      double require_pip = step_1st_pip * configs.merge_followup_step_muliplier;
-      double buy_dist = 0.0;
-      double sell_dist = 0.0;
-
-      if(mergeBuyOrders.size() > 1) {
-        mergeBuyOrders.sort(new Comparator<IOrder>() {
-          @Override
-          public int compare(IOrder lhs, IOrder rhs) {
-            return Double.compare(lhs.getProfitLossInPips(), rhs.getProfitLossInPips()) > 0 ? -1 : 1;
-          }
-        });
-        double pip_buy = 0, _amt_buy = 0;
-        int num = 0;
-        for( IOrder o : mergeBuyOrders) {
-          double amt = o.getAmount()*1000;
-          _amt_buy += amt;
-          pip_buy += o.getProfitLossInPips() * amt;
-          //pip_buy -= getCommisionPip(o);
-          if(++num < 2)
-            continue;
-          buy_dist = (pip_buy / _amt_buy); // * (1-configs.trail_step_rest_plus_gain);
-          if(Double.isNaN(buy_dist) || Double.compare(buy_dist, require_pip) < 0) {
-            mergeBuyOrders.clear();
-          } else if(mergeBuyOrders.size() > 2) {
-            mergeBuyOrders = mergeBuyOrders.subList(0, 2);
-          }
-          break;
-        }
-      }
-
-      if(mergeSellOrders.size() > 1) {
-        mergeSellOrders.sort(new Comparator<IOrder>() {
-          @Override
-          public int compare(IOrder lhs, IOrder rhs) {
-            return Double.compare(lhs.getProfitLossInPips(), rhs.getProfitLossInPips()) > 0 ? -1 : 1;
-          }
-        });
-        double pip_sell = 0, _amt_sell = 0;
-        int num = 0;
-        for( IOrder o : mergeSellOrders) {
-          double amt = o.getAmount()*1000;
-          _amt_sell += amt;
-          pip_sell += o.getProfitLossInPips() * amt;
-          //pip_sell -= getCommisionPip(o);
-          if(++num < 2)
-            continue;
-          sell_dist = (pip_sell / _amt_sell); // * (1-configs.trail_step_rest_plus_gain);
-          if(Double.isNaN(sell_dist) || Double.compare(sell_dist, require_pip) < 0) {
-            mergeSellOrders.clear();
-          } else if(mergeSellOrders.size() > 2) {
-            mergeSellOrders = mergeSellOrders.subList(0, 2);
-          }
-          break;
-        }
-      }
-
-      if(mergeSellOrders.size() >= 2 || mergeBuyOrders.size() >= 2) {
-        orders.clear();
-        if(mergeBuyOrders.size() >= 2)
-          SharedProps.print(inst_str + " Merge pos-buy dist=" + buy_dist +  " require=" + require_pip);
-        if(mergeSellOrders.size() >= 2)
-          SharedProps.print(inst_str + " Merge pos-sell dist=" + sell_dist + " require=" + require_pip);
-      } else {
-        mergeBuyOrders.clear();
-        mergeSellOrders.clear();
-      }
-    }
-
 
     if(inst_init.get() && orders.size() > 1) {
       mergeBuyOrders.addAll(orders);
@@ -410,17 +292,17 @@ public class PriceDeviationInstrument implements IStrategy {
           break;
       }
       mergeBuyOrders.clear();
-
-      if(neg_count == 1 && ts - SharedProps.oBusy.get(neg.getId()) < 888)
+      if(neg_count > 1 || ts - SharedProps.oBusy.get(neg.getId()) < 888)
         neg_count = 0;
 
-      boolean merge = false;
-      double sl = orders_trailingstep.getOrDefault(pos.getId(), 0.0);
       if(neg_count == 1 &&
          pos.getOrderCommand() != neg.getOrderCommand() &&
-         Double.compare(sl, 0.0) > 0 &&
+         Double.compare(pos.getProfitLossInAccountCurrency(), Math.abs(neg.getProfitLossInAccountCurrency())) > 0 &&
          Double.compare(pos.getAmount(), neg.getAmount()) > 0) {
-        if(Double.compare(pos.getProfitLossInAccountCurrency(), neg.getProfitLossInAccountCurrency()) > 0) {
+        double sl = configs.trail_managed
+          ? orders_trailingstep.getOrDefault(pos.getId(), 0.0)
+          : pos.getStopLossPrice();
+        if(Double.compare(sl, 0.0) > 0) {
           double pos_dif, neg_dif;
           lastTick = getLastTick();
           double price;
@@ -437,13 +319,16 @@ public class PriceDeviationInstrument implements IStrategy {
           neg_dif *= (neg.getAmount()*1000);
           pos_dif -= getCommisionPip(pos) * inst_pip;
           neg_dif -= getCommisionPip(neg) * inst_pip;
+          pos_dif -= Math.abs((getCommisionPip(pos) - getCommisionPip(neg)) * inst_pip);
 
-          merge = Double.compare(pos_dif - step_1st * configs.merge_close_neg_side_multiplier, neg_dif) > 0;
+          double reach = (pos_dif - neg_dif) / ((pos.getAmount() - neg.getAmount()) * 1000);
+          boolean merge = Double.compare(reach, step_1st * configs.merge_close_neg_side_multiplier) > 0;
           if(merge || configs.debug) {
             SharedProps.print(
               inst_str + " Merge " + (merge ? "" : "nominated ") + "pos-close" +
-              " pos_dif=" + pos_dif + " neg_dif=" + neg_dif + " diff=" +
-              SharedProps.round((pos_dif - step_1st * configs.merge_close_neg_side_multiplier) - neg_dif, inst_scale + 2) +
+              " pos_dif=" + SharedProps.round(pos_dif, inst_scale + 2) +
+              " neg_dif=" + SharedProps.round(neg_dif, inst_scale + 2) +
+              " reach=" + SharedProps.round(reach, inst_scale + 2) +
               " @ " + pos.getProfitLossInAccountCurrency() + " > " + neg.getProfitLossInAccountCurrency()
             );
           }
@@ -452,53 +337,85 @@ public class PriceDeviationInstrument implements IStrategy {
             executeClose(neg, 0, price);
             orders.remove(neg);
           }
+        } else {
+          double pos_dif = pos.getProfitLossInPips() * (pos.getAmount()*1000) - getCommisionPip(pos);
+          double neg_dif = Math.abs(neg.getProfitLossInPips()) * (neg.getAmount()*1000) + getCommisionPip(neg);
+          pos_dif -= Math.abs(getCommisionPip(pos) - getCommisionPip(neg));
+
+          double reach = (pos_dif - neg_dif) / ((pos.getAmount() - neg.getAmount()) * 1000);
+          boolean merge = Double.compare(reach, step_1st_pip * configs.merge_close_neg_side_multiplier) > 0;
+          if(merge || configs.debug) {
+            SharedProps.print(
+              inst_str + " Merge " + (merge ? "" : "nominated ") + "on side" +
+              " pos_dif=" + SharedProps.round(pos_dif, 2) +
+              " neg_dif=" + SharedProps.round(neg_dif, 2) +
+              " reach=" + SharedProps.round(reach, 2) +
+              " @ " + pos.getProfitLossInAccountCurrency() + " > " + neg.getProfitLossInAccountCurrency()
+            );
+          }
+          if(merge) {
+            mergeBuyOrders.add(neg);
+            mergeBuyOrders.add(pos);
+            orders.clear();
+            SharedProps.oBusy.put(neg.getId(), ts + 500);
+            SharedProps.oBusy.put(pos.getId(), ts + 500);
+          }
         }
       }
     }
 
-    double std_dev = getStdDevPip();
-    if(inst_init.get() && !Double.isNaN(std_dev) && orders.size() > 1) {
+    if(inst_init.get() && orders.size() > 1) {
       for(IOrder o : orders) {
-        double weight = o.getAmount()/getAmount(1);
-        if(Double.compare(o.getProfitLossInPips(), -std_dev/(configs.merge_distance_std_dev_divider*(configs.merge_max/weight))) <= 0) {
-          cmd = o.getOrderCommand();
-          if(cmd == OrderCommand.SELL)
-            mergeSellOrders.add(o);
-          else if(cmd == OrderCommand.BUY)
-            mergeBuyOrders.add(o);
-        }
+        if(o.getOrderCommand() == OrderCommand.SELL)
+          mergeSellOrders.add(o);
+        else
+          mergeBuyOrders.add(o);
       }
       if(mergeSellOrders.size() < 2) {
         mergeSellOrders.clear();
       } else {
-        SharedProps.print(inst_str + " Merge neg-sell std_dev=" + std_dev);
+        SharedProps.print(inst_str + " Merge sell");
+        orders.clear();
       }
       if(mergeBuyOrders.size() < 2) {
         mergeBuyOrders.clear();
       } else {
-        SharedProps.print(inst_str + " Merge neg-buy std_dev=" + std_dev);
+        SharedProps.print(inst_str + " Merge buy");
+        orders.clear();
       }
     }
 
     ////
-    double one_amt = getAmount(1);
+    double amt_one = getAmount(1);
     for( IOrder o : orders) {
       if(Double.compare(o.getProfitLossInPips(), step_1st_pip) <= 0 ||
          ts - SharedProps.oBusy.get(o.getId()) < 888) {
         continue;
       }
       cmd = o.getOrderCommand();
-      if(Double.compare(amt_buy, amt_sell) == 0 ||
-         (cmd == OrderCommand.BUY
-          ? (Double.compare(amt_buy - configs.trail_from_diff_amount_muliplier * one_amt, amt_sell) < 0)
-          : (Double.compare(amt_sell - configs.trail_from_diff_amount_muliplier * one_amt, amt_buy) < 0)) )
+      if(configs.trail_at_one_side
+          ? (Double.compare(amt_buy, 0.0) > 0 && Double.compare(amt_sell, 0.0) > 0)
+          : (Double.compare(amt_sell, amt_buy) == 0 || (cmd == OrderCommand.BUY
+            ? (Double.compare(amt_sell, 0.0) > 0 &&
+               Double.compare(amt_buy, SharedProps.round(amt_sell + amt_one * configs.open_followup_amount_muliplier, 3)) <= 0)
+            : (Double.compare(amt_buy,  0.0) > 0 &&
+               Double.compare(amt_sell, SharedProps.round(amt_buy + amt_one * configs.open_followup_amount_muliplier, 3)) <= 0) ) ) )
         continue;
 
       trailingStep = step_1st;
       o_profit = o.getProfitLossInPips() * inst_pip;
       double o_cost = getCommisionPip(o);
-      if(Double.compare(o_profit - o_cost * inst_pip, trailingStep * configs.trail_step_entry_multiplier) <= 0)
+      if(Double.compare(o_profit - o_cost * inst_pip, trailingStep * configs.trail_step_entry_multiplier) <= 0) {
+        if(configs.debug && Double.compare(o_profit,  trailingStep * configs.trail_step_entry_multiplier) > 0)
+          SharedProps.print(inst_str +
+            " sl-state:" + SharedProps.round(o_profit/inst_pip - o_cost, 2) +
+            " pl:" + SharedProps.round(o_profit/inst_pip, 2) +
+            " cost:" + SharedProps.round(o_cost, 2) +
+            " commision:" + o.getCommission() +
+            " value:" + o.getProfitLossInAccountCurrency()
+          );
         continue;
+      }
 
       if(Double.compare(o_profit - trailingStep,  o_profit * configs.trail_step_rest_plus_gain) > 0)
         trailingStep += o_profit * configs.trail_step_rest_plus_gain;
@@ -514,15 +431,15 @@ public class PriceDeviationInstrument implements IStrategy {
         trailSLprice = lastTickBid - trailingStep; // - (lastTickAsk - lastTickBid);
         trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
-        if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) < 0) {
+        if (Double.compare(trailSLprice, 0.0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) < 0) {
           if(configs.trail_managed) {
             double sl = orders_trailingstep.getOrDefault(o.getId(), 0.0);
             update_sl = Double.compare(sl, 0.0) == 0;
             if(!update_sl)
               update_sl = Double.compare(sl, trailSLprice) < 0;
           } else {
-            if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) < 0 || Double.compare(o.getStopLossPrice(), 0.0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0.0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) < 0)
                 update_sl = true;
             }
           }
@@ -533,15 +450,15 @@ public class PriceDeviationInstrument implements IStrategy {
         trailSLprice = lastTickAsk + trailingStep; // + (lastTickAsk - lastTickBid);
         trailSLprice = SharedProps.round(trailSLprice, inst_scale + 1);
 
-        if (Double.compare(trailSLprice, 0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) > 0) {
+        if (Double.compare(trailSLprice, 0.0) > 0 && Double.compare(o.getOpenPrice(), trailSLprice) > 0) {
           if(configs.trail_managed) {
             double sl = orders_trailingstep.getOrDefault(o.getId(), 0.0);
             update_sl = Double.compare(sl, 0.0) == 0;
             if(!update_sl)
               update_sl = Double.compare(sl, trailSLprice) > 0;
           } else {
-            if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0) == 0) {
-              if (Double.compare(o.getTrailingStep(), 0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
+            if (Double.compare(o.getStopLossPrice(), trailSLprice) > 0 || Double.compare(o.getStopLossPrice(), 0.0) == 0) {
+              if (Double.compare(o.getTrailingStep(), 0.0) == 0 || Double.compare(o.getStopLossPrice(), trailSLprice) > 0)
                 update_sl = true;
             }
           }
@@ -573,7 +490,7 @@ public class PriceDeviationInstrument implements IStrategy {
           merge = false;
           break;
         }
-        if(Double.compare(o.getStopLossPrice(),0) > 0){
+        if(Double.compare(o.getStopLossPrice(), 0.0) > 0){
           executeOrderSetSL(o, 0);
           merge = false;
         }
@@ -590,7 +507,7 @@ public class PriceDeviationInstrument implements IStrategy {
           merge = false;
           break;
         }
-        if(Double.compare(o.getStopLossPrice(),0) > 0){
+        if(Double.compare(o.getStopLossPrice(), 0.0) > 0){
           executeOrderSetSL(o, 0);
           merge = false;
         }
@@ -623,19 +540,19 @@ public class PriceDeviationInstrument implements IStrategy {
     public TrailingOrder(OrderCommand c, IOrder order, double price, double step) {
       trail_price = price;
       o = order;
-      trail_step = Double.compare(step, 10) > 0? step : (Double.compare(step, 0)==0 ? 0: 10);
+      trail_step = Double.compare(step, 10.0) > 0 ? step : (Double.compare(step, 0.0) == 0 ? 0: 10);
       cmd = c;
     }
     public IOrder call() {
       try {
         if (cmd == OrderCommand.BUY) {
           o.setStopLossPrice(trail_price, OfferSide.BID, trail_step);
-          if (Double.compare(o.getTakeProfitPrice(), 0) != 0 && Double.compare(o.getOpenPrice(), trail_price) < 0)
+          if (Double.compare(o.getTakeProfitPrice(), 0.0) != 0 && Double.compare(o.getOpenPrice(), trail_price) < 0)
             o.setTakeProfitPrice(0);
 
         } else if (cmd == OrderCommand.SELL) {
           o.setStopLossPrice(trail_price, OfferSide.ASK, trail_step);
-          if (Double.compare(o.getTakeProfitPrice(), 0) != 0 && Double.compare(o.getOpenPrice(), trail_price) > 0)
+          if (Double.compare(o.getTakeProfitPrice(), 0.0) != 0 && Double.compare(o.getOpenPrice(), trail_price) > 0)
             o.setTakeProfitPrice(0);
         }
         SharedProps.oBusy.put(o.getId(), SharedProps.get_sys_ts() + 900);
@@ -747,173 +664,154 @@ public class PriceDeviationInstrument implements IStrategy {
 
 
   //
-  private void executeInstrument(long ts, double std_dev) throws Exception {
+  private void executeInstrument(long ts) throws Exception {
 
     double amt = getAmount(1);
-    int totalBuyOrder = 0;
-    int totalSellOrder = 0;
-
-    boolean followUpBuyOrder = false;
-    boolean followUpSellOrder = false;
+    double buying_amt = amt;
+    double selling_amt = amt;
+    double step_1st_pip = getFirstStep()/inst_pip;
 
     boolean positiveBuyOrder = false;
     boolean positiveSellOrder = false;
-
-    double totalSoldAmount = 0;
-    double totalBoughtAmount = 0;
+    int orders_buy = 0;
+    int orders_sell = 0;
+    double amt_buy = 0.0;
+    double amt_sell = 0.0;
 
     OrderCommand cmd;
-    double o_profit, o_amt;
-    double step_1st_pip = getFirstStep()/inst_pip;
-    double inst_cost = 0.0;
     List<IOrder> orders = new ArrayList<>();
     for(IOrder o : engine.getOrders(inst)) {
       if(o.getState() != IOrder.State.FILLED &&
          o.getState() != IOrder.State.OPENED &&
          o.getState() != IOrder.State.CREATED) continue;
       cmd = o.getOrderCommand();
-      o_amt = o.getAmount();
-      inst_cost += getCommisionPip(o);
       if(cmd == OrderCommand.BUY || cmd == OrderCommand.PLACE_BID || cmd == OrderCommand.BUYLIMIT || cmd == OrderCommand.BUYSTOP) {
-        ++totalBuyOrder;
-        totalBoughtAmount += o_amt;
+        ++orders_buy;
+        amt_buy += o.getAmount();
         if(cmd == OrderCommand.BUY)
           orders.add(o);
       } else if(cmd == OrderCommand.SELL || cmd == OrderCommand.PLACE_OFFER || cmd == OrderCommand.SELLLIMIT || cmd == OrderCommand.SELLSTOP) {
-        ++totalSellOrder;
-        totalSoldAmount += o_amt;
+        ++orders_sell;
+        amt_sell += o.getAmount();
         if(cmd == OrderCommand.SELL)
           orders.add(o);
       }
     }
-    double amt_buy = SharedProps.round(totalBoughtAmount, 3);
-    double amt_sell = SharedProps.round(totalSoldAmount, 3);
+    amt_buy = SharedProps.round(amt_buy, 3);
+    amt_sell = SharedProps.round(amt_sell, 3);
 
-    double o_diff = getOffersDifference()/inst_pip;
-    inst_cost += o_diff;
-    o_diff += Math.abs(step_1st_pip * configs.positive_order_step_multiplier);
-    double o_cost;
-    boolean op_neg = Double.compare(configs.positive_order_step_multiplier, 0) < 0;
-
-    for(IOrder o : orders) {
-      o_profit = o.getProfitLossInPips();
-      o_cost = o_diff + getCommisionPip(o);
-      if(op_neg)
-        o_cost *= -1;
-      if(Double.compare(o_profit + o_cost, 0) < 0)
-        continue;
-
-      cmd = o.getOrderCommand();
-      double sl = configs.trail_managed
-        ? orders_trailingstep.getOrDefault(o.getId(), 0.0)
-        : o.getStopLossPrice();
-
-      boolean flw_possible =
-        configs.open_followup_check_from_positive ||
-        Double.compare(amt_buy, amt_sell) == 0 ||
-         (cmd == OrderCommand.BUY
-          ? (Double.compare(amt_buy - configs.trail_from_diff_amount_muliplier * amt, amt_sell) < 0)
-          : (Double.compare(amt_sell - configs.trail_from_diff_amount_muliplier * amt, amt_buy) < 0)) ||
-        Double.compare(sl, 0) > 0;
-
-      double reach = 0;
-      double require = configs.open_followup_step_muliplier;
-      if(flw_possible) {
-        reach = (o_profit * (1 - configs.trail_step_rest_plus_gain) - inst_cost) / step_1st_pip;
-        if(Double.compare(amt_buy, amt_sell) == 0) {
-          require = configs.open_followup_step_first_muliplier;
-        } else if(cmd == OrderCommand.BUY ? (Double.compare(amt_buy, amt_sell) < 0) : (Double.compare(amt_buy, amt_sell) > 0)) {
-          require = configs.open_followup_step_less_muliplier;
-        } else {
-          require *= 1.00 + (Math.abs((amt_buy - amt_sell)/amt) * configs.open_followup_require_growth_rate);
+    if(orders.size() > 1) {
+      List<IOrder> mergeOrders = new ArrayList<>();
+      mergeOrders.addAll(orders);
+      mergeOrders.sort(new Comparator<IOrder>() {
+        @Override
+        public int compare(IOrder lhs, IOrder rhs) {
+          return Double.compare(lhs.getProfitLossInPips(), rhs.getProfitLossInPips()) > 0 ? -1 : 1;
         }
-        flw_possible = Double.compare(reach, require) >= 0;
+      });
+      IOrder pos = mergeOrders.get(0);
+      IOrder neg = mergeOrders.get(mergeOrders.size()-1);
+      int neg_count = 0;
+      for(IOrder o : mergeOrders) {
+        if(neg.getOrderCommand() == o.getOrderCommand() && ++neg_count > 1)
+          break;
       }
-      o_amt = o.getAmount();
-      if(cmd == OrderCommand.BUY) {
-        positiveBuyOrder = true;
-        if(flw_possible) {
-          SharedProps.print(inst_str +  " Reached Flw Open-new Buy " + reach + " > " + require + " o_amt=" + o_amt + " total-buy=" + totalBuyOrder);
-          --totalBuyOrder;
-          followUpBuyOrder = true;
-        }
-      } else if(cmd == OrderCommand.SELL) {
-        positiveSellOrder = true;
-        if(flw_possible) {
-          SharedProps.print(inst_str +  " Reached Flw Open-new Sell " + reach + " > " + require + " o_amt=" + o_amt + " total-sell=" + totalSellOrder);
-          --totalSellOrder;
-          followUpSellOrder = true;
-        }
-      }
-    }
-    
-    for(IOrder o : orders) {
-      cmd = o.getOrderCommand();
-      o_profit = o.getProfitLossInPips();
-      o_cost = o_diff + getCommisionPip(o);
-      if(Double.compare(o_profit + o_cost, 0) >= 0 ||
-         (positiveSellOrder && cmd == OrderCommand.BUY) ||
-          positiveBuyOrder  && cmd == OrderCommand.SELL) {
-        continue;
-      }
-      if(cmd == OrderCommand.BUY && followUpBuyOrder) {
-        if(totalBuyOrder == 1)
-          SharedProps.print(inst_str +  " Reached Pos Open-new Buy under-pip=" + o_profit + o_cost);
-        --totalBuyOrder;
-        continue;
-      }
-      if(cmd == OrderCommand.SELL && followUpSellOrder) {
-        if(totalSellOrder == 1)
-          SharedProps.print(inst_str +  " Reached Pos Open-new Sell under-pip=" + o_profit + o_cost);
-        --totalSellOrder;
-        continue;
-      }
-
-      double weight = o.getAmount()/amt;
-      if(Double.compare(weight, configs.merge_max) < 0) {
-        double reach = - SharedProps.round(std_dev/(configs.open_new_std_dev_divider*(configs.merge_max/weight)), 1);
-        if(Double.compare(o_profit, reach) <= 0) {
-          cmd = o.getOrderCommand();
-          if(cmd == OrderCommand.BUY) {
-            if(totalBuyOrder == 1)
-              SharedProps.print(inst_str +  " Reached Neg Open-new Buy " + o_profit + " <= " + reach + " weight=" + weight + " std_dev=" + std_dev);
-            --totalBuyOrder;
-          } else if(cmd == OrderCommand.SELL) {
-            if(totalSellOrder == 1)
-              SharedProps.print(inst_str +  " Reached Neg Open-new Sell " + o_profit + " <= " + reach + " weight=" + weight + " std_dev=" + std_dev);
-            --totalSellOrder;
+      if(neg_count == 1 &&
+         pos.getOrderCommand() != neg.getOrderCommand() &&
+         Double.compare(pos.getProfitLossInAccountCurrency(), Math.abs(neg.getProfitLossInAccountCurrency())) > 0 &&
+         Double.compare(pos.getAmount(), neg.getAmount()) > 0) {
+        double sl = configs.trail_managed
+          ? orders_trailingstep.getOrDefault(pos.getId(), 0.0)
+          : pos.getStopLossPrice();
+        if(Double.compare(sl, 0.0) == 0) {
+          double pos_dif = pos.getProfitLossInPips() * (pos.getAmount()*1000);// - getCommisionPip(pos);
+          double neg_dif = Math.abs(neg.getProfitLossInPips()) * (neg.getAmount()*1000);// + getCommisionPip(neg);
+          //pos_dif -= Math.abs(getCommisionPip(pos) - getCommisionPip(neg));
+          double reach = (pos_dif - neg_dif) / ((pos.getAmount() - neg.getAmount()) * 1000);
+          if(Double.compare(reach, step_1st_pip * configs.merge_close_neg_side_multiplier) >= 0) {
+            return;
           }
         }
       }
     }
 
-    if(!positiveSellOrder && Double.compare(totalBoughtAmount, 0.0) > 0 && Double.compare(totalBoughtAmount, amt) < 0) {
-      SharedProps.print(inst_str + " Adjust Open-new Buy totalBuyOrder=" + totalBuyOrder);
-      totalBuyOrder = 0;
-    }
-    if(!positiveBuyOrder && Double.compare(totalSoldAmount, 0.0) > 0 && Double.compare(totalSoldAmount, amt) < 0) {
-      SharedProps.print(inst_str + " Adjust Open-new Sell totalSoldAmount=" + totalSoldAmount);
-      totalSellOrder = 0;
+    double o_diff = getOffersDifference();
+    double o_cost = o_diff/inst_pip + Math.abs(step_1st_pip * configs.positive_order_step_multiplier);
+    if(Double.compare(configs.positive_order_step_multiplier, 0.0) < 0)
+      o_cost *= -1;
+
+    for(IOrder o : orders) {
+      double o_profit = o.getProfitLossInPips();
+      double sl = configs.trail_managed
+        ? orders_trailingstep.getOrDefault(o.getId(), 0.0)
+        : o.getStopLossPrice();
+      boolean at_sl = Double.compare(sl, 0.0) > 0;
+      if(!at_sl && Double.compare(o_profit + o_cost, 0.0) < 0)
+        continue;
+
+      double require;
+      double reach = o_profit;
+      if(at_sl) {
+        require = configs.open_followup_step_muliplier + (Math.abs((amt_buy - amt_sell)/amt) * configs.open_followup_require_growth_rate);
+        reach *= (1 - configs.trail_step_rest_plus_gain);
+        reach -= getCommisionPip(o);
+      } else {
+        require = configs.open_followup_step_first_muliplier;
+      }
+      reach -= o_diff;
+      if(Double.compare(configs.positive_order_step_multiplier, 0.0) < 0)
+        reach -= o_diff;
+      reach /= step_1st_pip;
+
+      cmd = o.getOrderCommand();
+      if(cmd == OrderCommand.BUY) {
+        if(Double.compare(amt_buy, amt_sell) < 0)
+          continue;
+        positiveBuyOrder = true;
+        if(Double.compare(reach, require) < 0)
+          continue;
+        if(at_sl ||
+           (configs.trail_at_one_side && Double.compare(amt_sell, 0.0) > 0) ||
+           Double.compare(amt_buy, amt_sell) == 0 ||
+           Double.compare(amt_buy, SharedProps.round(amt_sell + amt * configs.open_followup_amount_muliplier, 3)) <= 0) {
+          SharedProps.print(inst_str +  " Reached Flw Open-new Buy " + reach + " > " + require);
+          --orders_buy;
+          //if(!at_sl)
+          //  buying_amt += (amt_sell + amt * configs.open_followup_amount_muliplier) - amt_buy;
+        }
+      } else if(cmd == OrderCommand.SELL) {
+        if(Double.compare(amt_sell, amt_buy) < 0)
+          continue;
+        positiveSellOrder = true;
+        if(Double.compare(reach, require) < 0)
+          continue;
+        if(at_sl ||
+           (configs.trail_at_one_side && Double.compare(amt_buy, 0.0) > 0) ||
+           Double.compare(amt_buy, amt_sell) == 0 ||
+           Double.compare(amt_sell, SharedProps.round(amt_buy + amt * configs.open_followup_amount_muliplier, 3)) <= 0) {
+          SharedProps.print(inst_str +  " Reached Flw Open-new Sell " + reach + " > " + require);
+          --orders_sell;
+          //if(!at_sl)
+          //  selling_amt += (amt_buy + amt * configs.open_followup_amount_muliplier) - amt_sell;
+        }
+      }
     }
 
-    Boolean do_buy =  totalBuyOrder < 1 && !positiveSellOrder && (followUpBuyOrder  || getTrend("UP"));
-    Boolean do_sell = totalSellOrder < 1 && !positiveBuyOrder && (followUpSellOrder || getTrend("DW"));
+    Boolean do_buy =  orders_buy  < 1 && !positiveSellOrder;
+    Boolean do_sell = orders_sell < 1 && !positiveBuyOrder;
 
     if(do_buy || do_sell) {
       if(do_buy)
-        executeSubmitOrder(amt, OrderCommand.BUY);
+        executeSubmitOrder(buying_amt, OrderCommand.BUY);
       if(do_sell)
-        executeSubmitOrder(amt, OrderCommand.SELL);
+        executeSubmitOrder(selling_amt, OrderCommand.SELL);
 
-    } else if(Double.compare(Math.abs(amt_buy - amt_sell), amt * configs.open_support_amt_diff) >= 0) {
-      double diff = amt * configs.open_support_amt_diff - amt;
-      if(!positiveBuyOrder &&
-          Double.compare(amt_buy * configs.open_support_side_ratio - amt - diff, amt_sell) >= 0) {
-        executeSubmitOrder(amt_buy * configs.open_support_side_ratio - amt_sell - diff, OrderCommand.SELL);
+    } else if(Double.compare(Math.abs(amt_buy - amt_sell), 0.0) >= 0) {
+      if(!positiveBuyOrder && Double.compare(SharedProps.round(amt_buy - amt, 3), amt_sell) >= 0) {
+        executeSubmitOrder(amt_buy - amt_sell, OrderCommand.SELL);
       }
-      if(!positiveSellOrder &&
-          Double.compare(amt_sell * configs.open_support_side_ratio - amt - diff, amt_buy) >= 0) {
-        executeSubmitOrder(amt_sell * configs.open_support_side_ratio - amt_buy - diff, OrderCommand.BUY);
+      if(!positiveSellOrder && Double.compare(SharedProps.round(amt_sell - amt, 3), amt_buy) >= 0) {
+        executeSubmitOrder(amt_sell - amt_buy, OrderCommand.BUY);
       }
     }
   }
@@ -959,7 +857,7 @@ public class PriceDeviationInstrument implements IStrategy {
     public SubmitOrderProceed(String dir, OrderCommand orderCmd, double amount, double atPrice) {
       trend = dir;
       cmd = orderCmd;
-      amt = amount;
+      amt = SharedProps.round(amount, 6);
       at = atPrice;
     }
     public IOrder call() {
@@ -1009,7 +907,7 @@ public class PriceDeviationInstrument implements IStrategy {
     }
     public IOrder call() {
       try {
-        o.close(amt, price, 0.1);
+        o.close(amt); // , price, 0.1
       } catch (Exception e){
         SharedProps.print("CloseProceed call() E: "+e.getMessage()+" " +
           "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
@@ -1036,20 +934,32 @@ public class PriceDeviationInstrument implements IStrategy {
     return lastTick.getAsk()-lastTick.getBid();
   }
   private double getCommisionPip(IOrder o) {
-    try { 
-      double value = o.getCommission();
-      double rate = context.getUtils().convertPipToCurrency(
+    double value = Math.abs(o.getCommission());
+    double pl = Math.abs(o.getProfitLossInAccountCurrency());
+    double pip = Math.abs(o.getProfitLossInPips());
+    double chk = 0.5;
+    double rslt = 0.0;
+    double rate = 0.0;
+    if(Double.compare(pl, 1.0) > 0 && Double.compare(pip, 1.0) > 0)
+      chk = SharedProps.round(value/(pl/pip) + 0.1, 1);
+    try {
+      rate = context.getUtils().convertPipToCurrency(
         inst,
-        configs.account_currency, 
+        configs.account_currency,
         (o.getOrderCommand() == OrderCommand.BUY ? OfferSide.ASK : OfferSide.BID)
-      ) * 10000;
-      if(!Double.isNaN(rate) && Double.compare(rate, 0) != 0 && !Double.isNaN(value))
-        return Math.abs(SharedProps.round(value/rate + 0.1, 1));
-    } catch (Exception e) {
-      //SharedProps.print("getCommisionPip E: "+e.getMessage()+" " +
-      //                  "Thread: " + Thread.currentThread().getName() + " " + e +" " +inst_str);
+      );
+      if(!Double.isNaN(rate) && Double.compare(rate, 0.0) != 0) {
+        rate *= o.getAmount() * 1000 * (1000); // account_currency == pip-value (0.0001)
+        rslt = SharedProps.round(value/rate + 0.1, 1);
+      }
+    } catch (Exception e) { }
+    if(configs.debug) {
+      SharedProps.print(
+        inst_str + " getCommisionPip rate:" + SharedProps.round(rate, 1) +
+        " value:" + value + " chk:" + chk + " rslt:" + rslt
+      );
     }
-    return 0.5;
+    return SharedProps.round((Double.compare(rslt, 0.0) == 0 ? chk: rslt) * 2.2, 1);
   }
 
   //
@@ -1066,471 +976,9 @@ public class PriceDeviationInstrument implements IStrategy {
   }
 
   //
-  private void setStdDev(long ts) {
-
-    double tf = configs.period_to_minutes(configs.std_dev_period)*configs.std_dev_time;
-    double max = getMax(tf, OfferSide.ASK);
-    double min = getMin(tf, OfferSide.BID);
-    if(Double.isNaN(max) || Double.compare(max,0) == 0 || Double.isNaN(min) || Double.compare(min,0) == 0)
-      return;
-
-    double cur_std_dev = (max-min);
-    double minimal = minFirstStepByInst * configs.period_to_minutes(configs.std_dev_period) * (inst_pip/10);
-    cur_std_dev = Double.compare(cur_std_dev, minimal)>0?cur_std_dev:minimal;
-
-    if (Double.isNaN(SharedProps.inst_std_dev_avg.get(inst_str)))
-      SharedProps.inst_std_dev_avg.put(inst_str, cur_std_dev);
-    else
-      SharedProps.inst_std_dev_avg.put(inst_str, (SharedProps.inst_std_dev_avg.get(inst_str)+cur_std_dev)/2);
-    inst_std_dev_ts = ts;
-  }
-
-  //
   private double getFirstStep() {
     double step = minFirstStepByInst/configs.trail_step_1st_divider;
     return (Double.compare(step, configs.trail_step_1st_min) > 0 ? step : configs.trail_step_1st_min) * inst_pip;
-  }
-  private double getMinStdDev(double rnd) {
-    double min = minFirstStepByInst;
-    min = (Double.compare(min, configs.trail_step_1st_min) > 0 ? min : configs.trail_step_1st_min) * inst_pip;
-    min *= configs.profitable_ratio_min + (configs.profitable_ratio_max - configs.profitable_ratio_min) * rnd;
-    min += getOffersDifference();
-    return SharedProps.round(min, inst_scale+1);
-  }
-  private double getStdDev() {
-    return SharedProps.inst_std_dev_avg.get(inst_str);
-  }
-  private double getStdDevPip() {
-    double std_dev = SharedProps.inst_std_dev_avg.get(inst_str);
-    if(!Double.isNaN(std_dev))
-      return std_dev/inst_pip;
-    return Double.NaN;
-  }
-
-  //
-  private void setTimeFrames(long ts) {
-    try {
-      rnd_ratio += configs.profitable_ratio_chg;
-      rnd_ratio = SharedProps.round(rnd_ratio, 2);
-      if(Double.compare(rnd_ratio, 1) > 0)
-        rnd_ratio=0;
-
-      String k_r = inst_str+rnd_ratio;
-      String k = inst_str+rnd_ratio;
-
-      if(inst_tf_gf.containsKey(k_r)) {
-        if(inst_tf_gf.get(k_r)-(Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis() > 0) {
-          inst_pip_dist = inst_pip_dists.get(k_r);
-          inst_timeframe = inst_timeframes.get(k_r);
-          return;
-        }
-        if(configs.debug)
-          SharedProps.print(inst_str+" ts miss "+((inst_tf_gf.get(k_r)-
-              (Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis())/1000)+"@"+k_r);
-      }
-      String tmp_k;
-      double minSetStdDev = getMinStdDev(rnd_ratio);
-
-      double high, low;
-      double foundTime = 0;
-      double oneMinChange = 0;
-      double oneMinChangeSet = 0;
-      double oneMinChangeExists = 0;
-
-      // ON 1 SECOND
-      tmp_k = "_ONE_SEC";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 1000){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(16, OfferSide.ASK);
-          low = getMin(16, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int n=120; n<=960; n+=7){
-            int i = n/360;
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      // ON 10 SECONDS
-      tmp_k = "_TEN_SEC";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 7500){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(166, OfferSide.ASK);
-          low = getMin(166, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int i=17; i<166; i++){
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      // ON 1 MINUTE
-      tmp_k = "_ONE_MIN";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 30000){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(1000, OfferSide.ASK);
-          low = getMin(1000, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int i=167; i<1000; i++){
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      // ON 5 MINUTES
-      tmp_k = "_FIVE_MIN";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 150000){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(5000, OfferSide.ASK);
-          low = getMin(5000, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int i=1000; i<5000; i+=16){
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      // ON 10 MINUTES
-      tmp_k = "_TEEN_MIN";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 300000){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(10000, OfferSide.ASK);
-          low = getMin(10000, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int i=5000; i<10000; i+=20){
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      // ON 15 MINUTES
-      tmp_k = "_FIFTEEN_MIN";
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        if (inst_tf_ts.containsKey(k+tmp_k)) {
-          if( ts - inst_tf_ts.get(k+tmp_k) < 450000){
-            oneMinChangeSet = inst_tf.get(k+tmp_k);
-            foundTime = inst_tf.get(k+tmp_k+"_ft");
-          }
-        }
-      }
-      if(Double.compare(oneMinChangeSet,0) == 0) {
-        try{
-          high = getMax(15000, OfferSide.ASK);
-          low = getMin(15000, OfferSide.BID);
-          oneMinChangeExists = high-low;
-
-        } catch (Exception e) {
-          if(configs.debug)
-            SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-        }
-        if(!Double.isNaN(oneMinChangeExists) && Double.compare(oneMinChangeExists, minSetStdDev) >= 0) {
-          oneMinChangeExists=0;
-          for(int i=10000; i<15000; i+=20){
-            try {
-              high = getMax(i, OfferSide.ASK);
-              low = getMin(i, OfferSide.BID);
-              oneMinChange = high-low;
-
-              if(!Double.isNaN(oneMinChange) && Double.compare(oneMinChange,minSetStdDev) >= 0) {
-                foundTime = i;
-                oneMinChangeSet = oneMinChange;
-                inst_tf.put(k+tmp_k, oneMinChangeSet);
-                inst_tf.put(k+tmp_k+"_ft", foundTime);
-              }
-            } catch (Exception e) {
-              if(configs.debug)
-                SharedProps.print("getTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-            }
-            if(Double.compare(oneMinChangeSet, 0) > 0) break;
-          }
-        }
-      }
-      ///
-
-      if(!Double.isNaN(oneMinChangeSet) && Double.compare(oneMinChangeSet,0) > 0) {
-        double yE = getStdDev()/oneMinChangeSet;
-        double xE = ((configs.std_dev_time*configs.period_to_minutes(configs.std_dev_period))/foundTime);
-
-        double timeframe = SharedProps.round(foundTime*(1+yE/xE), 1);
-        if(Double.compare(timeframe,0) > 0) {
-          inst_tf_ts.put(k, ts);
-
-          double pips_dist = getPipsDistance(timeframe, minSetStdDev);
-          if(Double.isNaN(pips_dist)) return;
-          //pips_dist *= (1+(yE/xE)/2);
-
-          if(configs.debug)
-            SharedProps.print(inst_str+" tf"+
-                " ft: "+foundTime+
-                " xA: "+SharedProps.round(xE,1)+
-                " yA: "+SharedProps.round(yE,1)+
-                " r: "+SharedProps.round(1+yE/xE,2)+
-                " = "+SharedProps.round(timeframe, 1)+
-                " @ "+SharedProps.round(pips_dist/inst_pip, 1)+
-                " >> "+SharedProps.round(minSetStdDev/inst_pip,1 )+"@"+rnd_ratio);
-
-          Period p = configs.minutes_to_period(foundTime);
-          long good_for = history.getBarStart(p, getLastTick().getTime())+
-              (p.getInterval()*configs.profitable_ratio_good_for_bars);
-          long cal_ts = (Calendar.getInstance(TimeZone.getTimeZone("GMT"))).getTimeInMillis();
-          if(good_for < cal_ts)
-            good_for += (cal_ts-good_for)+p.getInterval();
-          inst_tf_gf.put(k_r, good_for);
-
-          inst_pip_dist = SharedProps.round(pips_dist, inst_scale+1);
-          inst_pip_dists.put(k_r, inst_pip_dist);
-
-          // foundTime --  chk on smaller time
-          inst_timeframe = timeframe;
-          inst_timeframes.put(k_r, inst_timeframe);
-          if(configs.debug) {
-            SharedProps.print(inst_str +
-                " ts good " + p.toString() +
-                " set:"+inst_tf_gf.get(k_r)+
-                " cur:"+cal_ts+
-                " for:"+(((double) (inst_tf_gf.get(k_r)-cal_ts))/1000)+
-                " @" + k_r);
-          }
-
-        }
-      }
-    } catch (Exception e) {
-      if(configs.debug)
-        SharedProps.print("setTimeFrames E: "+e.getMessage()+" " + e +" " +inst_str);
-    }
-  }
-
-  //
-  private double getPipsDistance(double tf, double min_std_dev) {
-    double min = getMin(tf, OfferSide.BID);
-    double max = getMax(tf, OfferSide.ASK);
-    if(Double.isNaN(min) || Double.isNaN(max)) return Double.NaN;
-
-    double pips = max-min;
-    if(Double.compare(pips, min_std_dev) < 0) return Double.NaN;
-    if(configs.debug)
-      SharedProps.print(inst_str+" pip_dist: "+ pips+"@"+tf);
-    return pips;
-  }
-
-  //
-  private boolean getTrend(String trend) {
-    return getPriceDifference(trend);
-  }
-
-
-  private boolean getPriceDifference(String trend) {
-    if(Double.compare(inst_pip_dist, 0) == 0)return false;
-
-    try{
-      double price_dif = 0.0;
-      double base;
-      double cur;
-      switch (trend){
-        case "DW":
-          base = getMin(inst_timeframe, OfferSide.ASK);
-          if(Double.isNaN(base)) return false;
-          cur = getLastTick().getBid();
-          if(Double.isNaN(cur)) return false;
-          price_dif = SharedProps.round(cur-base, inst_scale+1);
-          if(configs.debug)
-            SharedProps.print("getPriceDifference: DW "+inst_str+" "+cur+"-"+base+"="+price_dif+" @"+inst_timeframe);
-          break;
-
-        case "UP":
-          base = getMax(inst_timeframe, OfferSide.BID);
-          if(Double.isNaN(base)) return false;
-          cur = getLastTick().getAsk();
-          if(Double.isNaN(cur)) return false;
-          price_dif = SharedProps.round(base-cur, inst_scale+1);
-          if(configs.debug)
-            SharedProps.print("getPriceDifference: UP "+inst_str+" "+base+"-"+cur+"="+price_dif+" @"+inst_timeframe);
-          break;
-      }
-
-      //price_dif -= Math.abs(getOffersDifference());
-      double pipDistanceSet = SharedProps.round(inst_pip_dist*configs.price_diff_multiplier, inst_scale+1);
-
-      if(configs.debug)
-        SharedProps.print("getPriceDifference: "+inst_str+"_"+trend +
-          " "+SharedProps.round(price_dif - pipDistanceSet, inst_scale+1) +
-          " "+SharedProps.round(price_dif, inst_scale+1) +
-          ">" + SharedProps.round(pipDistanceSet, inst_scale+1) +" @"+inst_timeframe);
-
-      if(Double.compare(price_dif, pipDistanceSet) >= 0) {
-        /*
-        inst_trend_info.put(inst_str+"_"+trend,
-          inst_trend_info.get(inst_str+"_"+trend)+
-            " "+price_dif+">"+pipDistanceSet +
-            " "+configs.minutes_to_period(inst_timeframe).toString()+
-            ":"+configs.minutes_to_period_scale((inst_timeframe))+
-            " / "+configs.minutes_to_period(inst_timeframe,200).toString()+
-              ":"+configs.minutes_to_period_scale(inst_timeframe,200));
-        */
-        return true;
-       }
-
-    } catch (Exception e) {
-      if(configs.debug)
-        SharedProps.print("getPriceDifference E: "+e.getMessage()+
-                          " Thread: "+Thread.currentThread().getName()+" "+e+" "+inst_str);
-    }
-    return false;
   }
 
 
@@ -1673,14 +1121,6 @@ public class PriceDeviationInstrument implements IStrategy {
   private double getAmount(int num_orders) {
     double amt = configs.get_amount();
     return amt;
-    /*
-    if(num_orders == 1)
-      num_orders = 1;
-    amt *= (configs.merge_max * num_orders) / ((configs.merge_max * num_orders) + 2);
-    if(Double.compare(amt, 0.001) < 0)
-      amt = 0.001;
-    return amt;
-    */
   }
 
   @Override

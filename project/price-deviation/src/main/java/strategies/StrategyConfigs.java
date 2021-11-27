@@ -55,17 +55,10 @@ public class StrategyConfigs {
 
   @Configurable("Gain close required count")
   public int gain_close_count = 3;
-  @Configurable("Gain close on over-loss percentage")
-  public double gain_close_overloss_percent = 0.01;
-  @Configurable("Gain close on over-loss at least percentage value gain")
-  public double gain_close_overloss_atleast_percent = 1.0005;
-  @Configurable("Gain close on over-loss close amount")
-  public double gain_close_overloss_close_ratio = 0.50;
-
-  @Configurable("Gain close fixed applied at above leverage")
-  public double gain_close_fixed_from_leverage = 66;
-  @Configurable("Gain close fixed percentage above gain-base")
-  public double gain_close_fixed_percent = 1.33;
+  @Configurable("Gain close value grow")
+  public double gain_close_value_grow = 10.00;
+  @Configurable("Gain close amount devider")
+  public double gain_close_amount_devider = 2.00;
 
   public double amount = 0.001;
   @Configurable("Fixed Acc.Currency value for 0.001 amt")
@@ -74,23 +67,12 @@ public class StrategyConfigs {
   @Configurable("Bonus amount transparent")
   public double amount_bonus = 0;
 
-  @Configurable("Merge max")
-  public double merge_max = 10;
-  @Configurable("Merge distance StdDev divider")
-  public double merge_distance_std_dev_divider = 2.0;
-  @Configurable("Merge followup step muliplier")
-  public double merge_followup_step_muliplier = 4.50;
   @Configurable("Merge close negative-side step multiplier")
   public double merge_close_neg_side_multiplier = 5.00;
 
-  @Configurable("Open new order at negative distance of StdDev divider")
-  public double open_new_std_dev_divider = 3.0;
-
-  @Configurable("Open follow up check from positive")
-  public boolean open_followup_check_from_positive = false;
   
-  @Configurable("Open follow up require distance step at amount-less")
-  public double open_followup_step_less_muliplier = 2.00;
+  @Configurable("Open follow up amount side multiplier")
+  public double open_followup_amount_muliplier = 1.0;
   @Configurable("Open follow up require distance first-step")
   public double open_followup_step_first_muliplier = 6.50;
   @Configurable("Open follow up require distance by amount-difference")
@@ -98,31 +80,14 @@ public class StrategyConfigs {
   @Configurable("Open follow up require distance growth-rate")
   public double open_followup_require_growth_rate = 0.10;
 
-  @Configurable("Open support side ratio")
-  public double open_support_side_ratio = 1.00;
-  @Configurable("Open support at amount difference")
-  public double open_support_amt_diff = 1.00;
   @Configurable("Positive order at step multiplier")
   public double positive_order_step_multiplier = 0.00;
 
-  @Configurable("Profitable ratio min of StdDev on min step")
-  public double profitable_ratio_min = 12;
-  @Configurable("Profitable ratio max of StdDev on min step")
-  public double profitable_ratio_max = 20;
-  @Configurable("Profitable ratio chg from min to max")
-  public double profitable_ratio_chg = 0.2;
-  @Configurable("Profitable ratios good for bars in history")
-  public int profitable_ratio_good_for_bars = 1;
-
-  @Configurable("Standard deviation minutes timePeriod")
-  public int std_dev_time = 960;
-  @Configurable("Standard deviation Period")
-  public Period std_dev_period = Period.ONE_HOUR;
-
   @Configurable("trail step managed")
   public boolean trail_managed = false;
-  @Configurable("trail step from amount differ multiplier")
-  public double trail_from_diff_amount_muliplier = 1.0;
+  @Configurable("trail only at inst on one side")
+  public boolean trail_at_one_side = false;
+
   @Configurable("trail step min pip")
   public double trail_step_1st_min = 1.30;
   @Configurable("trail step 1st divider of min")
@@ -131,9 +96,6 @@ public class StrategyConfigs {
   public double trail_step_entry_multiplier = 4.0;
   @Configurable("trail step rest plus gain muliplier")
   public double trail_step_rest_plus_gain = 0.33;
-
-  @Configurable("Price Difference multiplier")
-  public double price_diff_multiplier = 0.90;
 
   @Configurable("Execute inst check ms")
   public long execute_inst_ms = 80;
@@ -183,36 +145,15 @@ public class StrategyConfigs {
             SharedProps.print("execute_inst_ms set to: "+execute_inst_ms);
             break;
 
-          case "profitable_ratio_min":
-            profitable_ratio_min = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_min set to: "+profitable_ratio_min);
-            break;
-          case "profitable_ratio_max":
-            profitable_ratio_max = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_max set to: "+profitable_ratio_max);
-            break;
-          case "profitable_ratio_chg":
-            profitable_ratio_chg = Double.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_chg set to: "+profitable_ratio_chg);
-            break;
-          case "profitable_ratio_good_for_bars":
-            profitable_ratio_good_for_bars = Integer.valueOf(config[1]);
-            SharedProps.print("profitable_ratio_good_for_bars set to: "+profitable_ratio_good_for_bars);
-            break;
-
-          case "std_dev_time":
-            std_dev_time = Integer.valueOf(config[1]);
-            SharedProps.print("std_dev_time set to: "+std_dev_time);
-            break;
-
           case "trail_managed":
             trail_managed = config[1].equals("true");
             SharedProps.print("trail_managed set to: "+trail_managed);
             break;
-          case "trail_from_diff_amount_muliplier":
-            trail_from_diff_amount_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("trail_from_diff_amount_muliplier set to: "+trail_from_diff_amount_muliplier);
+          case "trail_at_one_side":
+            trail_at_one_side = config[1].equals("true");
+            SharedProps.print("trail_at_one_side set to: "+trail_at_one_side);
             break;
+            
           case "trail_step_1st_min":
           trail_step_1st_min = Double.valueOf(config[1]);
             SharedProps.print("trail_step_1st_min set to: "+trail_step_1st_min);
@@ -230,18 +171,10 @@ public class StrategyConfigs {
           trail_step_rest_plus_gain = Double.valueOf(config[1]);
             SharedProps.print("trail_step_rest_plus_gain set to: "+trail_step_rest_plus_gain);
             break;
-
-          case "open_new_std_dev_divider":
-            open_new_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("open_new_std_dev_divider set to: "+open_new_std_dev_divider);
-            break;
-          case "open_followup_check_from_positive":
-            open_followup_check_from_positive = config[1].equals("true");
-            SharedProps.print("open_followup_check_from_positive set to: "+open_followup_check_from_positive);
-            break;
-          case "open_followup_step_less_muliplier":
-            open_followup_step_less_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_step_less_muliplier set to: "+open_followup_step_less_muliplier);
+    
+          case "open_followup_amount_muliplier":
+            open_followup_amount_muliplier = Double.valueOf(config[1]);
+            SharedProps.print("open_followup_amount_muliplier set to: "+open_followup_amount_muliplier);
             break;
           case "open_followup_step_first_muliplier":
             open_followup_step_first_muliplier = Double.valueOf(config[1]);
@@ -255,14 +188,6 @@ public class StrategyConfigs {
             open_followup_require_growth_rate = Double.valueOf(config[1]);
             SharedProps.print("open_followup_require_growth_rate set to: "+open_followup_require_growth_rate);
             break;
-          case "open_support_side_ratio":
-            open_support_side_ratio = Double.valueOf(config[1]);
-            SharedProps.print("open_support_side_ratio set to: "+open_support_side_ratio);
-            break;
-          case "open_support_amt_diff":
-            open_support_amt_diff = Double.valueOf(config[1]);
-            SharedProps.print("open_support_amt_diff set to: "+open_support_amt_diff);
-            break;
           case "positive_order_step_multiplier":
             positive_order_step_multiplier = Double.valueOf(config[1]);
             SharedProps.print("positive_order_step_multiplier set to: "+positive_order_step_multiplier);
@@ -272,27 +197,13 @@ public class StrategyConfigs {
             gain_close_count = Integer.valueOf(config[1]);
             SharedProps.print("gain_close_count set to: "+gain_close_count);
             break;
-
-          case "gain_close_overloss_percent":
-            gain_close_overloss_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_overloss_percent set to: "+gain_close_overloss_percent);
+          case "gain_close_value_grow":
+            gain_close_value_grow = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_value_grow set to: "+gain_close_value_grow);
             break;
-          case "gain_close_overloss_atleast_percent":
-            gain_close_overloss_atleast_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_overloss_atleast_percent set to: "+gain_close_overloss_atleast_percent);
-            break;
-          case "gain_close_overloss_close_ratio":
-            gain_close_overloss_close_ratio = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_overloss_close_ratio set to: "+gain_close_overloss_close_ratio);
-            break;
-
-          case "gain_close_fixed_from_leverage":
-            gain_close_fixed_from_leverage = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_fixed_from_leverage set to: "+gain_close_fixed_from_leverage);
-            break;
-          case "gain_close_fixed_percent":
-            gain_close_fixed_percent = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_fixed_percent set to: "+gain_close_fixed_percent);
+          case "gain_close_amount_devider":
+            gain_close_amount_devider = Double.valueOf(config[1]);
+            SharedProps.print("gain_close_amount_devider set to: "+gain_close_amount_devider);
             break;
 
           case "amount_value_fixed":
@@ -300,31 +211,13 @@ public class StrategyConfigs {
             SharedProps.print("amount_value_fixed set to: "+amount_value_fixed);
             break;
 
-          case "merge_distance_std_dev_divider":
-            merge_distance_std_dev_divider = Double.valueOf(config[1]);
-            SharedProps.print("merge_distance_std_dev_divider set to: "+merge_distance_std_dev_divider);
-            break;
-          case "merge_followup_step_muliplier":
-            merge_followup_step_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("merge_followup_step_muliplier set to: "+merge_followup_step_muliplier);
-            break;
           case "merge_close_neg_side_multiplier":
             merge_close_neg_side_multiplier = Double.valueOf(config[1]);
             SharedProps.print("merge_close_neg_side_multiplier set to: "+merge_close_neg_side_multiplier);
             break;
-          case "merge_max":
-            merge_max = Double.valueOf(config[1]);
-            SharedProps.print("merge_max set to: "+merge_max);
-            break;
-
           case "amount_bonus":
             amount_bonus = Double.valueOf(config[1]);
             SharedProps.print("amount_bonus set to: "+amount_bonus);
-            break;
-
-          case "price_diff_multiplier":
-            price_diff_multiplier = Double.valueOf(config[1]);
-            SharedProps.print("price_diff_multiplier set to: "+price_diff_multiplier);
             break;
 
           case "emailReports":

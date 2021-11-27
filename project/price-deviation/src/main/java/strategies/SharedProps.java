@@ -31,15 +31,11 @@ public class SharedProps {
     timeMillisSet = time;
   }
 
-  public static boolean amount_balanced_by_margin_reached = false;
-
 
   public static ConcurrentLinkedQueue<String> log_q = new ConcurrentLinkedQueue<>();
   public static ConcurrentLinkedQueue<String> reports_q = new ConcurrentLinkedQueue<>();
 
   public static ConcurrentHashMap<String, Boolean> inst_active= new ConcurrentHashMap<>();
-  public static ConcurrentHashMap<String, Double> inst_amt_ratio = new ConcurrentHashMap<>();
-  public static ConcurrentHashMap<String, Double> inst_std_dev_avg= new ConcurrentHashMap<>();
   public static ConcurrentHashMap<String, Long> oBusy= new ConcurrentHashMap<>();
 
   public static double round(double amount, int decimalPlaces) {

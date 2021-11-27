@@ -61,16 +61,9 @@ public class AccountManagement implements IStrategy{
     if(SharedProps.get_ts()-on_acc_ts < 0)
       return;
     try {
-      double amount = 1;
-      int counted_inst = StrategyConfigs.instruments.length;
-      if(counted_inst > 0) {
-        amount = ((eq - configs.amount_bonus) / (counted_inst * (configs.merge_max)))
-                  / (configs.amount_value_fixed * 2);
-      }
-      amount /= 1000;
+      double amount = configs.amount_value_fixed;
       if(Double.compare(amount, 0.001) < 0)   amount = 0.001;
       else if(Double.compare(amount, 10) > 0) amount = 10;
-
       configs.set_amount(SharedProps.round(amount, 6));
       on_acc_ts = SharedProps.get_ts()+10000;
     } catch (Exception e) {
@@ -222,35 +215,19 @@ public class AccountManagement implements IStrategy{
 
       eq_unsettled -= configs.amount_bonus;
       double eq = eq_unsettled - pl.profit;
-      if(Double.compare(account.getUseOfLeverage(), configs.gain_close_fixed_from_leverage) >= 0) {
-        if(Double.compare(eq, gainbase * configs.gain_close_fixed_percent) >= 0) {
-          gain_close_count += 1;
-          SharedProps.print("closeOrdersOnProfit fixed_leverage gainbase=" + gainbase +
-          " " + account.getUseOfLeverage() + ">=" + configs.gain_close_fixed_from_leverage +
-          " " + eq +" >= " + (gainbase * configs.gain_close_fixed_percent) +
-          " c=" + gain_close_count);
-          if(gain_close_count == configs.gain_close_count) {
-            gain_close_count = 0;
-            closeOrders_fixed_leverage();
-          }
-        }
-      } else if(Double.compare(eq, gainbase * configs.gain_close_overloss_atleast_percent) >= 0 && 
-                Double.compare(eq - gainbase, Math.abs(pl.loss) * configs.gain_close_overloss_percent) >= 0) {
+      if(Double.compare(eq, gainbase + configs.gain_close_value_grow) >= 0) {
         gain_close_count += 1;
-        SharedProps.print("closeOrdersOnProfit overloss eq=" + eq + " gainbase=" + gainbase +
-            " " + (eq - gainbase) + " >= " + (Math.abs(pl.loss) * configs.gain_close_overloss_percent) +
-            " c=" + gain_close_count);
+        SharedProps.print("closeOrdersOnProfit eq=" + eq + " gainbase=" + gainbase + " c=" + gain_close_count);
         if(gain_close_count == configs.gain_close_count) {
           gain_close_count = 0;
-          closeOrder_overloss();
+          closeOrder();
         }
       } else {
         gain_close_count = 0;
       }
 
     } catch (Exception e) {
-      SharedProps.print("closeOrdersOnProfit E: "+e.getMessage()+" "+
-                        "Thread: "+Thread.currentThread().getName()+" " + e);
+      SharedProps.print("closeOrdersOnProfit E: " + e.getMessage() + " Thread: "+Thread.currentThread().getName()+" " + e);
     }
   }
 
@@ -265,8 +242,8 @@ public class AccountManagement implements IStrategy{
     setGainBase();
   }
 
-  /// OVERLOSS CLOSE
-  private void closeOrder_overloss() {
+  /// GAIN CLOSE
+  private void closeOrder() {
 
     double open_price, sl_price;
     OrderCommand cmd;
@@ -328,7 +305,7 @@ public class AccountManagement implements IStrategy{
             o_loss = o.getProfitLossInAccountCurrency();
             o_lossing = o;
             SharedProps.print(
-              "closeOrder_overloss: nominated-order " + inst.toString() + " " + cmd + 
+              "closeOrder: nominated-order " + inst.toString() + " " + cmd + 
               " step=" + step +
               " loss=" + o_lossing.getProfitLossInUSD() + "/" + o_loss + "/" + o.getProfitLossInPips()
             );
@@ -338,13 +315,13 @@ public class AccountManagement implements IStrategy{
       if(o_lossing == null)
         return;
       SharedProps.print(
-        "closeOrder_overloss: closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
+        "closeOrder: closing-order " + o_lossing.getInstrument().toString() + " " + o_lossing.getOrderCommand() + " " + 
         " loss=" + o_lossing.getProfitLossInUSD() + "/" + o_loss + "/" + "/" + o_lossing.getProfitLossInPips()
       );
       context.executeTask(new CloseOrder(o_lossing));
 
     } catch (Exception e) {
-      SharedProps.print("closeOrder_overloss exec() E: " + e.getMessage() + " " +
+      SharedProps.print("closeOrder exec() E: " + e.getMessage() + " " +
                         "Thread: " + Thread.currentThread().getName() + " " + e);
     }
   }
@@ -357,75 +334,19 @@ public class AccountManagement implements IStrategy{
     }
     public IOrder call() {
       try {
-        double amt = SharedProps.round(o.getAmount() * configs.gain_close_overloss_close_ratio, 4);
-        if(Double.compare(amt, 0.001) < 0 || Double.compare(o.getAmount() - amt, 0.001) < 0)
-          amt = 0;
+        double amt = SharedProps.round(o.getAmount() / configs.gain_close_amount_devider, 3);
+        if(Double.compare(amt, 0.001) < 0)
+          amt = 0.001;
+        if(Double.compare(SharedProps.round(o.getAmount() - amt, 3), 0.001) < 0)
+          amt = 0.0;
         o.close(amt);
         apply_gainbase();
 
       } catch (Exception e){
-        SharedProps.print("closeOrder_overloss call() E: "+e.getMessage()+" " +
+        SharedProps.print("closeOrder call() E: "+e.getMessage()+" " +
             "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
       }
       return o;
-    }
-  }
-
-
-  /// FIXED AT LEVERAGE CLOSE
-  private void closeOrders_fixed_leverage() {
-    double sl_price;
-    List<IOrder> orders = new ArrayList<>();
-    try {
-      for (IOrder o : engine.getOrders()) {
-        if(o.getState() != IOrder.State.FILLED && o.getState() != IOrder.State.OPENED)
-          continue;
-        if(o.getOrderCommand() != OrderCommand.SELL && o.getOrderCommand() != OrderCommand.BUY)
-          continue;
-
-        sl_price = o.getStopLossPrice();
-        Instrument inst = o.getInstrument();
-        double atleast = configs.trail_step_1st_min + (getOffersDifference(inst)/inst.getPipValue()) + 0.2;
-        if(Double.compare(o.getProfitLossInPips(), -atleast) < 0 &&
-           (Double.isNaN(sl_price) || Double.compare(sl_price, 0) == 0)) {
-          orders.add(o);
-        }
-      }
-      if(orders.size() > 0) {
-        SharedProps.print(
-          "closeOrders_fixed_leverage: closing-orders= " + orders.size());
-        context.executeTask(new CloseOrders(orders));
-      }
-    } catch (Exception e) {
-      SharedProps.print("closeOrders_fixed_leverage exec() E: " + e.getMessage() + " " +
-                        "Thread: " + Thread.currentThread().getName() + " " + e);
-    }
-  }
-
-  private class CloseOrders implements Callable<IOrder> {
-    private final List<IOrder> closing_orders;
-
-    public CloseOrders(List<IOrder> orders) {
-      closing_orders = orders;
-    }
-    public IOrder call() {
-      try {
-        for (IOrder o : closing_orders) {
-          try { 
-            o.close();
-          } catch (Exception e) {
-            SharedProps.print("closeOrders_fixed_leverage call() E: "+e.getMessage()+" " +
-              "Thread: " + Thread.currentThread().getName() + " " + e +" " +o.getInstrument());
-          }
-        }
-        apply_gainbase();
-
-      } catch (Exception e){
-        SharedProps.print("closeOrders_fixed_leverage call() E: "+e.getMessage()+" " +
-            "Thread: " + Thread.currentThread().getName() + " " + e +
-            " orders=" + closing_orders.size());
-      }
-      return null;
     }
   }
 
