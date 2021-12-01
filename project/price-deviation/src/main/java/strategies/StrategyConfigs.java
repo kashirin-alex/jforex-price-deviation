@@ -12,117 +12,135 @@ import java.io.File;
 import java.io.FileReader;
 import java.util.Arrays;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+
+
 public class StrategyConfigs {
 
   public ICurrency account_currency;
+  public long      server_time_offset = 0;
 
   static public Instrument[] instruments;
 
-  static public Instrument[] getStrategyInstruments(){
-    SharedProps.print("|"+SharedProps.strategy_dir+"instruments.conf|");
-    File file=new File(SharedProps.strategy_dir+"instruments.conf");
+  static public Instrument[] getStrategyInstruments() {
     Instrument[] insts = {};
-    if(!file.exists()) return insts;
+
+    /*
+    insts = Instrument.values();
+    SharedProps.print("Possible instruments: (" + insts.length + ")");
+    for(Instrument inst : insts) {
+      SharedProps.print(" > " + inst );
+      SharedProps.inst_active.put(inst.toString(), false);
+    }
+    SharedProps.print(" ---------------------------- ");
+    if(insts.length > 0)
+      return insts;
+    insts = new Instrument[]{};
+    */
+
+    SharedProps.print("Reading Config |" + SharedProps.strategy_dir + "instruments.conf|");
+    File file = new File(SharedProps.strategy_dir + "instruments.conf");
+    if(!file.exists())
+      return insts;
     try {
       FileReader fr = new FileReader(file);
       BufferedReader reader  = new BufferedReader(fr);
       String line;
       while ((line = reader.readLine()) != null) {
-        SharedProps.print("|"+line+"|");
-
         Instrument inst = Instrument.fromString(line);
-        if(inst == null || !Instrument.contains(line))
+        if(inst == null || !Instrument.contains(line)) {
+          SharedProps.print("config skipped: |"+line+"|");
           continue;
+        }
         insts = Arrays.copyOf(insts, insts.length + 1);
         insts[insts.length - 1] = inst;
         SharedProps.inst_active.put(inst.toString(), false);
       }
       fr.close();
-      SharedProps.print("num instruments: "+insts.length+"|");
+
+      SharedProps.print("Using instruments: (" + insts.length + ")");
+      for(Instrument inst : insts) {
+        SharedProps.print(" > " + inst );
+      }
+      SharedProps.print(" ---------------------------- ");
     } catch (Exception e) {
       SharedProps.print(e);
     }
     return insts;
   }
 
-  @Configurable("Debug output")
-  public boolean debug = false;
-
-  public int slippage = 0;
-
-  @Configurable("gain Base")
-  public double gainBase = 0;
-
-  @Configurable("Gain close required count")
-  public int gain_close_count = 3;
-  @Configurable("Gain close value grow")
-  public double gain_close_value_grow = 10.00;
-  @Configurable("Gain close amount devider")
-  public double gain_close_amount_devider = 2.00;
-
-  public double amount = 0.001;
-  @Configurable("Fixed Acc.Currency value for 0.001 amt")
-  public double amount_value_fixed = 15.00;
-
-  @Configurable("Bonus amount transparent")
-  public double amount_bonus = 0;
-
-  @Configurable("Merge close negative-side step multiplier")
-  public double merge_close_neg_side_multiplier = 5.00;
-
-  
-  @Configurable("Open follow up amount side multiplier")
-  public double open_followup_amount_muliplier = 1.0;
-  @Configurable("Open follow up require distance first-step")
-  public double open_followup_step_first_muliplier = 6.50;
-  @Configurable("Open follow up require distance by amount-difference")
-  public double open_followup_step_muliplier = 7.20;
-  @Configurable("Open follow up require distance growth-rate")
-  public double open_followup_require_growth_rate = 0.10;
-
-  @Configurable("Positive order at step multiplier")
-  public double positive_order_step_multiplier = 0.00;
-
-  @Configurable("trail step managed")
-  public boolean trail_managed = false;
-  @Configurable("trail only at inst on one side")
-  public boolean trail_at_one_side = false;
-
-  @Configurable("trail step min pip")
-  public double trail_step_1st_min = 1.30;
-  @Configurable("trail step 1st divider of min")
-  public double trail_step_1st_divider = 2.00;
-  @Configurable("trail step entry multiplier")
-  public double trail_step_entry_multiplier = 4.0;
-  @Configurable("trail step rest plus gain muliplier")
-  public double trail_step_rest_plus_gain = 0.33;
-
-  @Configurable("Execute inst check ms")
-  public long execute_inst_ms = 80;
-
-  @Configurable("email Reports")
-  public boolean emailReports = false;
-  @Configurable("Report Name")
-  public String reportName = "";
-  @Configurable("Report Email")
-  public String reportEmail = "";
+  public AtomicBoolean debug             = new AtomicBoolean(false);
+  public AtomicBoolean trail_managed     = new AtomicBoolean(false);
+  public AtomicBoolean trail_at_one_side = new AtomicBoolean(false);
 
 
-  private static long getConfigsFileChange = 0;
-  private static long getConfigsTimer = 0;
+  public AtomicInteger slippage                 = new AtomicInteger(0);
+  public AtomicInteger equity_gain_change_count = new AtomicInteger(3);
 
 
-  public synchronized void getConfigs() {
+  public AtomicLong execute_inst_ms       = new AtomicLong(507);
+  public AtomicLong execute_inst_delay_ms = new AtomicLong(10000);
+  public AtomicLong last_execution_ts     = new AtomicLong(0);
+  public AtomicLong cfg_file_change       = new AtomicLong(0);
+  public AtomicLong cfg_ts                = new AtomicLong(0);
+
+
+  public class SyncDouble {
+    double value;
+    public SyncDouble(double v) { value = v; }
+    public synchronized void set(double v) { value = v; }
+    public synchronized double get() { return value; }
+  };
+
+  public SyncDouble equity_gain_base                        = new SyncDouble(0);
+  public SyncDouble equity_gain_change                      = new SyncDouble(0.10);
+  public SyncDouble amount                                  = new SyncDouble(1.0);
+  public SyncDouble merge_close_neg_side_multiplier         = new SyncDouble(7.00);
+  public SyncDouble equity_gain_state_close_step_multiplier = new SyncDouble(4.00);
+  public SyncDouble open_followup_amount_muliplier          = new SyncDouble(1.0);
+  public SyncDouble open_followup_step_offers_diff_devider  = new SyncDouble(10.0);
+  public SyncDouble open_followup_step_first_muliplier      = new SyncDouble(8.00);
+  public SyncDouble open_followup_step_muliplier            = new SyncDouble(25.0);
+  public SyncDouble open_followup_require_growth_rate       = new SyncDouble(0.10);
+  public SyncDouble order_zero_base_step_multiplier         = new SyncDouble(0.00);
+  public SyncDouble trail_step_1st_min                      = new SyncDouble(1.00);
+  public SyncDouble trail_step_1st_divider                  = new SyncDouble(1.00);
+  public SyncDouble trail_step_entry_multiplier             = new SyncDouble(5.0);
+  public SyncDouble trail_step_rest_plus_gain               = new SyncDouble(0.20);
+  public SyncDouble email_equity_gain_change                = new SyncDouble(0.05);
+
+
+  public class SyncString {
+    String value;
+    public SyncString(String v) { value = v; }
+    public synchronized void set(String v) { value = v; }
+    public synchronized String get() { return value; }
+    public synchronized boolean isEmpty() { return value.isEmpty(); }
+  };
+
+  public SyncString reportEmail = new SyncString("");
+  public SyncString reportName  = new SyncString("");
+
+
+
+  public void getConfigs() {
     try {
-      if(getConfigsTimer > System.currentTimeMillis() - 60 * 1000) return;
-      getConfigsTimer = System.currentTimeMillis();
+      if(cfg_ts.get() > System.currentTimeMillis())
+        return;
+      cfg_ts.set(System.currentTimeMillis() + 60 * 1000);
 
-      File file=new File(SharedProps.strategy_dir+"default.conf");
-      if(!file.exists()) return;
-      long fileLastModified = file.lastModified();
-      if (getConfigsFileChange == fileLastModified)return;
+      File file = new File(SharedProps.strategy_dir + "default.conf");
+      if(!file.exists())
+        return;
 
-      getConfigsFileChange = fileLastModified;
+      long mod = file.lastModified();
+      if(cfg_file_change.get() == mod)
+        return;
+      cfg_file_change.set(mod);
+
       FileReader fr = new FileReader(file);
       BufferedReader reader  = new BufferedReader(fr);
 
@@ -135,104 +153,110 @@ public class StrategyConfigs {
         String[] config = line.split(":");
         switch(config[0]) {
 
+          // bool
           case "debug":
-            debug = config[1].equals("true");
-            SharedProps.print("debug set to: "+debug);
+            debug.set(config[1].equals("true"));
+            SharedProps.print(config[0] + " set to: " + debug.get() );
             break;
-
-          case "execute_inst_ms":
-            execute_inst_ms = Long.valueOf(config[1]);
-            SharedProps.print("execute_inst_ms set to: "+execute_inst_ms);
-            break;
-
           case "trail_managed":
-            trail_managed = config[1].equals("true");
-            SharedProps.print("trail_managed set to: "+trail_managed);
+            trail_managed.set(config[1].equals("true"));
+            SharedProps.print(config[0] + " set to: " + trail_managed.get() );
             break;
           case "trail_at_one_side":
-            trail_at_one_side = config[1].equals("true");
-            SharedProps.print("trail_at_one_side set to: "+trail_at_one_side);
+            trail_at_one_side.set(config[1].equals("true"));
+            SharedProps.print(config[0] + " set to: " + trail_at_one_side.get() );
             break;
-            
+
+
+          // int
+          case "equity_gain_change_count":
+            equity_gain_change_count.set(Integer.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + equity_gain_change_count.get() );
+            break;
+
+
+          // long
+          case "execute_inst_ms":
+            execute_inst_ms.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_ms.get() );
+            break;
+          case "execute_inst_delay_ms":
+            execute_inst_delay_ms.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_delay_ms.get() );
+            break;
+
+
+          // double
           case "trail_step_1st_min":
-          trail_step_1st_min = Double.valueOf(config[1]);
-            SharedProps.print("trail_step_1st_min set to: "+trail_step_1st_min);
+            trail_step_1st_min.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + trail_step_1st_min.get() );
             break;
           case "trail_step_1st_divider":
-          trail_step_1st_divider = Double.valueOf(config[1]);
-            SharedProps.print("trail_step_1st_divider set to: "+trail_step_1st_divider);
+            trail_step_1st_divider.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + trail_step_1st_divider.get() );
             break;
           case "trail_step_entry_multiplier":
-            trail_step_entry_multiplier = Double.valueOf(config[1]);
-            SharedProps.print("trail_step_entry_multiplier set to: "+trail_step_entry_multiplier);
+            trail_step_entry_multiplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + trail_step_entry_multiplier.get() );
             break;
-
           case "trail_step_rest_plus_gain":
-          trail_step_rest_plus_gain = Double.valueOf(config[1]);
-            SharedProps.print("trail_step_rest_plus_gain set to: "+trail_step_rest_plus_gain);
+            trail_step_rest_plus_gain.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + trail_step_rest_plus_gain.get() );
             break;
-    
           case "open_followup_amount_muliplier":
-            open_followup_amount_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_amount_muliplier set to: "+open_followup_amount_muliplier);
+            open_followup_amount_muliplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_amount_muliplier.get() );
+            break;
+          case "open_followup_step_offers_diff_devider":
+            open_followup_step_offers_diff_devider.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_step_offers_diff_devider.get() );
             break;
           case "open_followup_step_first_muliplier":
-            open_followup_step_first_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_step_first_muliplier set to: "+open_followup_step_first_muliplier);
+            open_followup_step_first_muliplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_step_first_muliplier.get() );
             break;
           case "open_followup_step_muliplier":
-            open_followup_step_muliplier = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_step_muliplier set to: "+open_followup_step_muliplier);
+            open_followup_step_muliplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_step_muliplier.get() );
             break;
           case "open_followup_require_growth_rate":
-            open_followup_require_growth_rate = Double.valueOf(config[1]);
-            SharedProps.print("open_followup_require_growth_rate set to: "+open_followup_require_growth_rate);
+            open_followup_require_growth_rate.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_require_growth_rate.get() );
             break;
-          case "positive_order_step_multiplier":
-            positive_order_step_multiplier = Double.valueOf(config[1]);
-            SharedProps.print("positive_order_step_multiplier set to: "+positive_order_step_multiplier);
+          case "order_zero_base_step_multiplier":
+            order_zero_base_step_multiplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + order_zero_base_step_multiplier.get() );
             break;
-
-          case "gain_close_count":
-            gain_close_count = Integer.valueOf(config[1]);
-            SharedProps.print("gain_close_count set to: "+gain_close_count);
+          case "equity_gain_change":
+            equity_gain_change.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + equity_gain_change.get() );
             break;
-          case "gain_close_value_grow":
-            gain_close_value_grow = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_value_grow set to: "+gain_close_value_grow);
+          case "amount":
+            amount.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + amount.get() );
             break;
-          case "gain_close_amount_devider":
-            gain_close_amount_devider = Double.valueOf(config[1]);
-            SharedProps.print("gain_close_amount_devider set to: "+gain_close_amount_devider);
-            break;
-
-          case "amount_value_fixed":
-            amount_value_fixed = Double.valueOf(config[1]);
-            SharedProps.print("amount_value_fixed set to: "+amount_value_fixed);
-            break;
-
           case "merge_close_neg_side_multiplier":
-            merge_close_neg_side_multiplier = Double.valueOf(config[1]);
-            SharedProps.print("merge_close_neg_side_multiplier set to: "+merge_close_neg_side_multiplier);
+            merge_close_neg_side_multiplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + merge_close_neg_side_multiplier.get() );
             break;
-          case "amount_bonus":
-            amount_bonus = Double.valueOf(config[1]);
-            SharedProps.print("amount_bonus set to: "+amount_bonus);
+          case "equity_gain_state_close_step_multiplier":
+            equity_gain_state_close_step_multiplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + equity_gain_state_close_step_multiplier.get() );
             break;
-
-          case "emailReports":
-            emailReports = config[1].equals("true");
-            SharedProps.print("emailReports set to: "+emailReports);
-            break;
-
-          case "reportName":
-            reportName = config[1];
-            SharedProps.print("reportName set to: "+reportName);
+          case "email_equity_gain_change":
+            email_equity_gain_change.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + email_equity_gain_change.get() );
             break;
 
+
+          // string
           case "reportEmail":
-            reportEmail = config[1];
-            SharedProps.print("reportEmail set to: "+reportEmail);
+            reportEmail.set(config[1]);
+            SharedProps.print(config[0] + " set to: " + reportEmail.get());
+            break;
+          case "reportName":
+            reportName.set(config[1]);
+            SharedProps.print(config[0] + " set to: " + reportName.get());
             break;
 
           default : //Optional
@@ -242,13 +266,23 @@ public class StrategyConfigs {
       fr.close();
 
     } catch (Exception e) {
-      SharedProps.print("getConfig E: "+e.getMessage()+ " " + e);
+      SharedProps.print("getConfigs E: " + e);
     }
   }
 
 
+  public void set_equity_gain_base(double v) {
+    SharedProps.print("equity_gain_base chg: from " + equity_gain_base.get() + " to " + v);
+    equity_gain_base.set(v);
+  }
 
-  public int period_to_minutes(Period period){
+  public boolean is_email_report_enabled() {
+    return !reportEmail.isEmpty();
+  }
+
+
+
+  public static int period_to_minutes(Period period){
     if(period == Period.ONE_HOUR) return (int) 60;
     else if(period == Period.DAILY) return (int) 60*24;
     else if(period == Period.FOUR_HOURS) return (int) 60*4;
@@ -257,8 +291,7 @@ public class StrategyConfigs {
     else if(period == Period.WEEKLY ) return (int) 60*24*7;
     return (int) 2;
   }
-
-  public int minutes_to_period_scale(double timePeriod, double base){
+  public static int minutes_to_period_scale(double timePeriod, double base){
     if(Double.compare(timePeriod,0.017) < 0)    timePeriod=0.017;
 
     if(Double.compare(timePeriod,base/60) <= 0)    return (int) timePeriod*60;
@@ -275,11 +308,10 @@ public class StrategyConfigs {
     if(Double.compare(timePeriod,base*40320) <= 0) return (int)(timePeriod/40320);
     return (int) timePeriod;
   }
-  public int minutes_to_period_scale(double timePeriod){
+  public static int minutes_to_period_scale(double timePeriod){
     return minutes_to_period_scale(timePeriod, 1000);
   }
-
-  public Period minutes_to_period(double timePeriod, double base){
+  public static Period minutes_to_period(double timePeriod, double base){
     if(Double.compare(timePeriod,base/60) <= 0)    return Period.ONE_SEC;
     if(Double.compare(timePeriod,base/6) <= 0)     return Period.TEN_SECS;
     if(Double.compare(timePeriod,base) <= 0)       return Period.ONE_MIN;
@@ -294,21 +326,47 @@ public class StrategyConfigs {
     if(Double.compare(timePeriod,base*40320) <= 0) return Period.MONTHLY;
     return Period.FIFTEEN_MINS;
   }
-  public Period minutes_to_period(double timePeriod){
+  public static Period minutes_to_period(double timePeriod) {
     return minutes_to_period(timePeriod, 1000);
   }
 
-  public synchronized double get_gainBase(){
-    return gainBase;
+
+  public static double get_inst_amt_min(Instrument inst) {
+    double amt_min = inst.getTradeAmountIncrement();
+    amt_min /= 1000;
+    if(inst.getGroup().isCrypto()) {
+      amt_min /= 1000;
+      amt_min *= (inst.getMinTradeAmount() / inst.getTradeAmountIncrement());
+    }
+    return amt_min;
   }
-  public synchronized void set_gainBase(double v){
-    SharedProps.print("gainbase chg: from "+gainBase+" to "+v);
-    gainBase = v;
+
+  public static int get_double_scale(double v) {
+    if(Double.compare(v, 1.0) >= 0)
+      return 0;
+    if(Double.compare(v, 0.1) >= 0)
+      return 1;
+    if(Double.compare(v, 0.01) >= 0)
+      return 2;
+    if(Double.compare(v, 0.001) >= 0)
+      return 3;
+    if(Double.compare(v, 0.0001) >= 0)
+      return 4;
+    if(Double.compare(v, 0.00001) >= 0)
+      return 5;
+    if(Double.compare(v, 0.000001) >= 0)
+      return 6;
+    if(Double.compare(v, 0.0000001) >= 0)
+      return 7;
+    if(Double.compare(v, 0.00000001) >= 0)
+      return 8;
+    if(Double.compare(v, 0.000000001) >= 0)
+      return 9;
+    if(Double.compare(v, 0.0000000001) >= 0)
+      return 10;
+    if(Double.compare(v, 0.00000000001) >= 0)
+      return 11;
+    return 12;
   }
-  public synchronized double get_amount(){
-    return amount;
-  }
-  public synchronized void set_amount(double v){
-    amount = v;
-  }
+
 }

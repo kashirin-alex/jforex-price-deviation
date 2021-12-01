@@ -36,7 +36,7 @@ public class jForexClient {
       //get the instance of the IClient interface
       final IClient client = ClientFactory.getDefaultInstance(); //new DCClientImpl(); //
 
-      if(cache_dir != null) 
+      if(cache_dir != null)
         client.setCacheDirectory(cache_dir);
 
       //set the listener that will receive system events
@@ -73,7 +73,7 @@ public class jForexClient {
                   --lightReconnects;
                   SharedProps.print("TRY TO RECONNECT, reconnects left: " + lightReconnects);
                 } catch (Exception e) {
-                  SharedProps.print("Failed to reconnect: " + e.getMessage());
+                  SharedProps.print("Failed to reconnect: " + e);
                 }
               }
 
@@ -82,7 +82,7 @@ public class jForexClient {
                   client.connect(jnlp_uri, user_name, password);
                   Thread.sleep(10000);
                 } catch (Exception e) {
-                  SharedProps.print("Failed to connect: " + e.getMessage());
+                  SharedProps.print("Failed to connect: " + e);
                 }
               };
             }
@@ -136,10 +136,10 @@ public class jForexClient {
       SharedProps.print("Client isSkipTicks: " + pref.platform().platformSettings().isSkipTicks());
 
       return client;
-      
+
     } catch (Exception e) {
       e.printStackTrace();
-      SharedProps.print(e.getMessage());
+      SharedProps.print(e);
     }
     return null;
   }

@@ -11,18 +11,18 @@ public class PriceDeviation {
 
   public static void main(String[] args) {
 
-    if(java.lang.System.getProperty("STRATEGY") == null) 
+    if(java.lang.System.getProperty("STRATEGY") == null)
       SharedProps.strategy_dir="";
-    else 
+    else
       SharedProps.strategy_dir = java.lang.System.getProperty("STRATEGY");
-    if(!SharedProps.strategy_dir.isEmpty() && !SharedProps.strategy_dir.endsWith("/")) 
+    if(!SharedProps.strategy_dir.isEmpty() && !SharedProps.strategy_dir.endsWith("/"))
       SharedProps.strategy_dir+="/";
 
     StrategyConfigs.instruments = StrategyConfigs.getStrategyInstruments();
     SharedProps.configs.getConfigs();
 
     SharedProps.print("args: ");
-    for(String s : args) 
+    for(String s : args)
       SharedProps.print(s);
 
     Thread thread = new Thread(new Runnable() {
@@ -36,7 +36,7 @@ public class PriceDeviation {
 
   public static void start_strategy() {
     jForexClient acc_client = new jForexClient(
-      System.getProperty("USR"), 
+      System.getProperty("USR"),
       System.getProperty("PWD"),
       System.getProperty("ACC"),
       System.getProperty("cache_dir")
@@ -56,10 +56,10 @@ public class PriceDeviation {
       try {
         Thread.sleep(10000);
       } catch (Exception e) {
-        SharedProps.print(e.getMessage());
+        SharedProps.print(e);
       }
 
-      if(System.currentTimeMillis() - strategy_check_ts < 600000) 
+      if(System.currentTimeMillis() - strategy_check_ts < 600000)
         continue;
       strategy_check_ts = System.currentTimeMillis();
 
@@ -81,7 +81,7 @@ public class PriceDeviation {
         try {
           Thread.sleep(3000);
         } catch (Exception e) {
-          SharedProps.print(e.getMessage());
+          SharedProps.print(e);
         }
 
       } else if(acc_man.pid_restart.get()){
@@ -101,7 +101,7 @@ public class PriceDeviation {
         if(!strategies.containsKey(inst.toString())) {
           if(!clients.containsKey(inst.toString())) {
             s_client = acc_client.get_client(inst);
-            if(s_client == null) 
+            if(s_client == null)
               continue;
             clients.put(inst.toString(), s_client);
           }
@@ -113,7 +113,7 @@ public class PriceDeviation {
           strategy.strategyId = s_client.startStrategy(strategy);
           strategy.client = s_client;
           strategies.put(inst.toString(), strategy);
-          
+
           SharedProps.print("Started strategy "+inst.toString() +":"+ strategy.strategyId);
           SharedProps.print("Client "+inst.toString()+ " strategies count: "+ s_client.getStartedStrategies().size());
 
@@ -131,7 +131,7 @@ public class PriceDeviation {
                 strategy.inst_thread.interrupt();
                 Thread.sleep(10);
               } catch (Exception e) {
-                SharedProps.print(e.getMessage());
+                SharedProps.print(e);
               }
             }
             strategies.remove(inst.toString());
