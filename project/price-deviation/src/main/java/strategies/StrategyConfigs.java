@@ -81,9 +81,14 @@ public class StrategyConfigs {
   public AtomicInteger equity_gain_change_count = new AtomicInteger(3);
 
 
-  public AtomicLong execute_inst_ms       = new AtomicLong(507);
-  public AtomicLong execute_inst_delay_ms = new AtomicLong(10000);
-  public AtomicLong last_execution_ts     = new AtomicLong(0);
+  public AtomicLong execute_inst_ms                   = new AtomicLong(507);
+  public AtomicLong execute_inst_delay_ms             = new AtomicLong(10000);
+  public AtomicLong execute_inst_delay_init_ms        = new AtomicLong(10000);
+  public AtomicLong last_execution_ts                 = new AtomicLong(0);
+  public AtomicLong execute_inst_skip_weekend_secs    = new AtomicLong(21600);
+  public AtomicLong execute_inst_skip_day_end_secs    = new AtomicLong(10800);
+  public AtomicLong execute_inst_skip_day_begin_secs  = new AtomicLong(7200);
+
   public AtomicLong cfg_file_change       = new AtomicLong(0);
   public AtomicLong cfg_ts                = new AtomicLong(0);
 
@@ -99,12 +104,15 @@ public class StrategyConfigs {
   public SyncDouble equity_gain_change                      = new SyncDouble(0.10);
   public SyncDouble amount                                  = new SyncDouble(1.0);
   public SyncDouble merge_close_neg_side_multiplier         = new SyncDouble(7.00);
+  public SyncDouble merge_close_neg_side_growth_rate        = new SyncDouble(0.001);
   public SyncDouble equity_gain_state_close_step_multiplier = new SyncDouble(4.00);
   public SyncDouble open_followup_amount_muliplier          = new SyncDouble(1.0);
   public SyncDouble open_followup_step_offers_diff_devider  = new SyncDouble(10.0);
   public SyncDouble open_followup_step_first_muliplier      = new SyncDouble(8.00);
+  public SyncDouble open_followup_step_first_upto_ratio     = new SyncDouble(10.00);
   public SyncDouble open_followup_step_muliplier            = new SyncDouble(25.0);
   public SyncDouble open_followup_require_growth_rate       = new SyncDouble(0.10);
+  public SyncDouble open_followup_flat_amt_muliplier        = new SyncDouble(0.00);
   public SyncDouble order_zero_base_step_multiplier         = new SyncDouble(0.00);
   public SyncDouble trail_step_1st_min                      = new SyncDouble(1.00);
   public SyncDouble trail_step_1st_divider                  = new SyncDouble(1.00);
@@ -184,6 +192,22 @@ public class StrategyConfigs {
             execute_inst_delay_ms.set(Long.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + execute_inst_delay_ms.get() );
             break;
+          case "execute_inst_delay_init_ms":
+            execute_inst_delay_init_ms.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_delay_init_ms.get() );
+            break;
+          case "execute_inst_skip_weekend_secs":
+            execute_inst_skip_weekend_secs.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_skip_weekend_secs.get() );
+            break;
+          case "execute_inst_skip_day_end_secs":
+            execute_inst_skip_day_end_secs.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_skip_day_end_secs.get() );
+            break;
+          case "execute_inst_skip_day_begin_secs":
+            execute_inst_skip_day_begin_secs.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + execute_inst_skip_day_begin_secs.get() );
+            break;
 
 
           // double
@@ -215,6 +239,10 @@ public class StrategyConfigs {
             open_followup_step_first_muliplier.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + open_followup_step_first_muliplier.get() );
             break;
+          case "open_followup_step_first_upto_ratio":
+            open_followup_step_first_upto_ratio.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_step_first_upto_ratio.get() );
+            break;
           case "open_followup_step_muliplier":
             open_followup_step_muliplier.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + open_followup_step_muliplier.get() );
@@ -222,6 +250,10 @@ public class StrategyConfigs {
           case "open_followup_require_growth_rate":
             open_followup_require_growth_rate.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + open_followup_require_growth_rate.get() );
+            break;
+          case "open_followup_flat_amt_muliplier":
+            open_followup_flat_amt_muliplier.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_followup_flat_amt_muliplier.get() );
             break;
           case "order_zero_base_step_multiplier":
             order_zero_base_step_multiplier.set(Double.valueOf(config[1]));
@@ -238,6 +270,10 @@ public class StrategyConfigs {
           case "merge_close_neg_side_multiplier":
             merge_close_neg_side_multiplier.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + merge_close_neg_side_multiplier.get() );
+            break;
+          case "merge_close_neg_side_growth_rate":
+            merge_close_neg_side_growth_rate.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + merge_close_neg_side_growth_rate.get() );
             break;
           case "equity_gain_state_close_step_multiplier":
             equity_gain_state_close_step_multiplier.set(Double.valueOf(config[1]));
@@ -270,6 +306,13 @@ public class StrategyConfigs {
     }
   }
 
+  public synchronized long delays_init_execution(long ts) {
+    long delay = last_execution_ts.get() - ts;
+    if(delay >= 0)
+      return delay;
+    last_execution_ts.set(ts + execute_inst_delay_init_ms.get());
+    return -1;
+  }
 
   public void set_equity_gain_base(double v) {
     SharedProps.print("equity_gain_base chg: from " + equity_gain_base.get() + " to " + v);
