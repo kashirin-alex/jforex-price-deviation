@@ -73,4 +73,9 @@ public class SharedProps {
   public static synchronized double get_free_margin() { return free_margins; }
   public static synchronized void set_free_margin(double v) { free_margins = v; }
 
+  private static double leverage_used = 0.0;
+  public static synchronized double get_leverage_used() { return leverage_used; }
+  public static synchronized void set_leverage_used(double v) { leverage_used = v; }
+
+
 }

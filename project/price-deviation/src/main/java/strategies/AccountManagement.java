@@ -59,13 +59,17 @@ public class AccountManagement implements IStrategy{
     }).start();
   }
 
-  public void adjust_free_margin() {
+  public void adjust_state() {
     try {
       double eq = account.getEquity();
       if(!Double.isNaN(eq)) {
-        double used_margin = account.getUsedMargin();
-        if(!Double.isNaN(used_margin)) {
-          SharedProps.set_free_margin(eq - used_margin);
+        double value = account.getUsedMargin();
+        if(!Double.isNaN(value)) {
+          SharedProps.set_free_margin(eq - value);
+        }
+        value = account.getUseOfLeverage();
+        if(!Double.isNaN(value)) {
+          SharedProps.set_leverage_used(value);
         }
       }
     } catch(Exception e) { }
@@ -73,7 +77,7 @@ public class AccountManagement implements IStrategy{
 
   @Override
   public void onAccount(IAccount acc) {
-    adjust_free_margin();
+    adjust_state();
   }
 
   @Override
@@ -116,7 +120,7 @@ public class AccountManagement implements IStrategy{
   public void onBar(Instrument instrument, Period period, IBar askBar, IBar bidBar) { }
   @Override
   public void onTick(Instrument instrument, ITick tick) {
-    adjust_free_margin();
+    adjust_state();
   }
   @Override
   public void onStop() {
@@ -159,7 +163,11 @@ public class AccountManagement implements IStrategy{
           wait = 500;
 
         } else if(ts >= ten_secs) {
-          SharedProps.print("bg_tasks");
+          SharedProps.print(
+            "bg_tasks" +
+            " free-margin:" + SharedProps.round(SharedProps.get_free_margin(), 2) +
+            " use-of-leverage:" + SharedProps.round(SharedProps.get_leverage_used(), 2)
+          );
           equity_change();
           ten_secs = ts + 10000;
         }

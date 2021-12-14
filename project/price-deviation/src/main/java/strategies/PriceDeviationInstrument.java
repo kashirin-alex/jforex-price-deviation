@@ -54,6 +54,7 @@ public class PriceDeviationInstrument implements IStrategy {
   private long            inst_exec_ts = 0;
   private double          inst_offer_diff = 0.0;
   private long            inst_offer_diff_ts = 0;
+  private boolean         inst_was_flat_positive = false;
 
   private ConcurrentHashMap<String, Double> orders_trailingstep = new ConcurrentHashMap<>();
 
@@ -316,11 +317,12 @@ public class PriceDeviationInstrument implements IStrategy {
         state_gain_chg.set(false);
         return;
       }
-      long day_secs = (ts/1000) - ((long)(ts/86400000))*86400;
+      long day_secs = (ts / 1000) + (configs.timezone_offset.get() * 3600);
+      day_secs -= ((long)(day_secs/86400)) * 86400;
       long check_ts = configs.execute_inst_skip_day_end_secs.get() - (86400 - day_secs);
       if(check_ts >= 0) {
         if(log_at_ts)
-          SharedProps.print(inst_str + " skip instrument init-execution end-of-day for=" + (check_ts - configs.execute_inst_skip_day_end_secs.get()) + "s");
+          SharedProps.print(inst_str + " skip instrument init-execution end-of-day for=" + (configs.execute_inst_skip_day_end_secs.get() - check_ts) + "s");
         return;
       }
       check_ts = configs.execute_inst_skip_day_begin_secs.get() - day_secs;
@@ -458,7 +460,7 @@ public class PriceDeviationInstrument implements IStrategy {
         double neg_cost = getCommisionPip(neg, ts);
         double pos_amt = pos.getAmount() * inst_amt_ratio;
         double neg_amt = neg.getAmount() * inst_amt_ratio;
-        double require = (pos.getAmount()/inst_amt_min) * configs.merge_close_neg_side_growth_rate.get();
+        double require = ((neg.getAmount() / inst_amt_min) / (pos_amt/neg_amt)) * configs.merge_close_neg_side_growth_rate.get();
         require += configs.merge_close_neg_side_multiplier.get();
         if(Double.compare(o_sl, 0.0) > 0) {
           double pos_dif, neg_dif;
@@ -676,25 +678,31 @@ public class PriceDeviationInstrument implements IStrategy {
           executeClose(o, 0.0, (o.getOrderCommand() == OrderCommand.BUY ? lastTickBid : lastTickAsk), ts);
           return;
         }
-      } else {
-        IOrder o1 = orders.get(0);
-        IOrder o2 = orders.get(1);
-        double amt1 = o1.getAmount() * inst_amt_ratio;
-        double amt2 = o2.getAmount() * inst_amt_ratio;
-        double pip1 = o1.getProfitLossInPips() * amt1;
-        double pip2 = o2.getProfitLossInPips() * amt2;
-        double at = (pip1 + pip2) / (amt1 + amt2);
+      } else if(Double.compare(orders.get(0).getAmount(), amt_one) > 0 ||
+                Double.compare(orders.get(1).getAmount(), amt_one) > 0) {
+        IOrder pos;
+        IOrder neg;
+        if(Double.compare(orders.get(0).getProfitLossInPips(), orders.get(1).getProfitLossInPips()) >= 0) {
+          pos = orders.get(0);
+          neg = orders.get(1);
+        } else {
+          pos = orders.get(1);
+          neg = orders.get(0);
+        }
+        double pos_amt = pos.getAmount() * inst_amt_ratio;
+        double neg_amt = neg.getAmount() * inst_amt_ratio;
+        double at = ((pos.getProfitLossInPips() * pos_amt) - (Math.abs(neg.getProfitLossInPips()) * neg_amt)) / (pos_amt - neg_amt);
         allow *= 2;
         if(Double.compare(at, allow) < 0) {
           SharedProps.print(
             inst_str + " state equity_change merge " +
-            " 1: amt=" + o1.getAmount() + " pip=" + o1.getProfitLossInPips() +
-            " 2: amt=" + o2.getAmount() + " pip=" + o2.getProfitLossInPips() +
+            " pos: amt=" + pos.getAmount() + " pip=" + pos.getProfitLossInPips() +
+            " neg: amt=" + neg.getAmount() + " pip=" + neg.getProfitLossInPips() +
             " at: pip=" + SharedProps.round(at, 2) + " allow=" + SharedProps.round(allow, 2) +
             " diff=" + SharedProps.round(offer_diff, 2) + " step=" + SharedProps.round(step_1st_pip, 2)
           );
-          mergeBuyOrders.add(o1);
-          mergeBuyOrders.add(o2);
+          mergeBuyOrders.add(pos);
+          mergeBuyOrders.add(neg);
           executeMergeOrders(mergeBuyOrders, ts);
           return;
         }
@@ -718,17 +726,14 @@ public class PriceDeviationInstrument implements IStrategy {
     final boolean with_flat_muliplier = Double.compare(open_followup_flat_amt_muliplier, 0.0) > 0;
 
     final boolean neg_zero_base = Double.compare(order_zero_base_step_multiplier, 0.0) <= 0;
-    o_cost = offer_diff + Math.abs(step_1st_pip * order_zero_base_step_multiplier);
-    if(neg_zero_base)
-      o_cost *= -1;
-
+    final double inst_cost = (neg_zero_base ? -1 : 1) * (offer_diff + Math.abs(step_1st_pip * order_zero_base_step_multiplier));
     final double _step_1st_pip = step_1st_pip + (offer_diff / configs.open_followup_step_offers_diff_devider.get());
 
     for(IOrder o : orders) {
       o_profit = o.getProfitLossInPips();
       o_sl = getStopLoss(o, trail_managed);
       boolean at_sl = Double.compare(o_sl, 0.0) > 0;
-      if(!at_sl && Double.compare(o_profit - o_cost, 0.0) < 0)
+      if(!at_sl && Double.compare(o_profit - inst_cost, 0.0) < 0)
         continue;
 
       double require = require_growth;
@@ -739,10 +744,11 @@ public class PriceDeviationInstrument implements IStrategy {
         reach -= getCommisionPip(o, ts);
       } else {
         require += open_followup_step_first_muliplier;
+        if(!neg_zero_base)
+          reach -= inst_cost;
+        reach -= offer_diff;
       }
       reach -= offer_diff;
-      if(!neg_zero_base)
-        reach -= offer_diff;
       reach /= _step_1st_pip;
 
       cmd = o.getOrderCommand();
@@ -794,6 +800,39 @@ public class PriceDeviationInstrument implements IStrategy {
     Boolean do_buy =  orders_buy  < 1 && !positiveSellOrder;
     Boolean do_sell = orders_sell < 1 && !positiveBuyOrder;
 
+    if(orders.size() == 1) {
+      inst_was_flat_positive = false;
+    } else if((do_buy || do_sell) && orders.size() > 1) {
+      IOrder bought;
+      IOrder sold;
+      if(orders.get(0).getOrderCommand() == OrderCommand.BUY) {
+        bought = orders.get(0);
+        sold = orders.get(1);
+      } else {
+        bought = orders.get(1);
+        sold = orders.get(0);
+      }
+      if(inst_flat) {
+        inst_was_flat_positive = Double.compare(bought.getOpenPrice(), sold.getOpenPrice()) <= 0;
+      } else if(!inst_was_flat_positive && Double.compare(
+                  bought.getProfitLossInAccountCurrency() + sold.getProfitLossInAccountCurrency(),
+                  1.6 * (Math.abs(bought.getCommission()) + Math.abs(sold.getCommission())) ) > 0) {
+        do_buy = false;
+        do_sell = false;
+        positiveBuyOrder = false;
+        positiveSellOrder = false;
+        SharedProps.print(
+          inst_str + " Apply positive-flat" +
+          " bought:" + SharedProps.round(bought.getProfitLossInAccountCurrency(), 2) +
+          " sold:" + SharedProps.round(sold.getProfitLossInAccountCurrency(), 2) +
+          " above:" + SharedProps.round(Math.abs(bought.getCommission()) + Math.abs(sold.getCommission()), 2)
+        );
+      } else if(inst_was_flat_positive) {
+        buying_amt = inst_amt_min;
+        selling_amt = inst_amt_min;
+      }
+    }
+
     if(do_buy || do_sell) {
 
       long check_ts = (inst_starts ? configs.delays_init_execution(ts) : (inst_exec_ts - ts));
@@ -804,11 +843,27 @@ public class PriceDeviationInstrument implements IStrategy {
       }
       inst_exec_ts = ts + configs.execute_inst_delay_ms.get();
 
-      if(Double.compare(SharedProps.get_free_margin(), 0.0) > 0) {
+      if((orders.size() == 1 && Double.compare(SharedProps.get_free_margin(), 0.0) > 0) ||
+         (Double.compare(SharedProps.get_free_margin(), 10.0) > 0 && Double.compare(SharedProps.get_leverage_used(), 90.0) < 0)) {
+        double ratio = SharedProps.round(1.0 - SharedProps.get_leverage_used()/100, 2);
+        if(orders.size() > 1 && Double.compare(ratio, 0.50) <= 0) {
+          if(Double.compare(buying_amt, inst_amt_min) > 0) {
+            buying_amt *= ratio;
+            if(Double.compare(buying_amt, inst_amt_min) < 0)
+              buying_amt = inst_amt_min;
+          }
+          if(Double.compare(selling_amt, inst_amt_min) > 0) {
+            selling_amt *= ratio;
+            if(Double.compare(selling_amt, inst_amt_min) < 0)
+              selling_amt = inst_amt_min;
+          }
+        }
+
         if(debug) {
           SharedProps.print(
             inst_str +
-            " submit do: one=" + amt_one + " buy=" + (do_buy ? buying_amt : 0) + " sell=" + (do_sell ? selling_amt : 0) +
+            " submit do: one=" + amt_one + " ratio=" + ratio +
+            " buy=" + (do_buy ? buying_amt : 0) + " sell=" + (do_sell ? selling_amt : 0) +
             " total: buy=" + amt_buy + " sell=" + amt_sell
           );
         }
@@ -819,10 +874,10 @@ public class PriceDeviationInstrument implements IStrategy {
       }
 
     } else if(Double.compare(SharedProps.round(Math.abs(amt_buy - amt_sell), inst_amt_scale), inst_amt_min) >= 0) {
-      if(!positiveBuyOrder && Double.compare(SharedProps.round(amt_buy - inst_amt_min, inst_amt_scale), amt_sell) >= 0) {
+      if(!positiveBuyOrder && Double.compare(SharedProps.round(amt_buy - amt_sell, inst_amt_scale), inst_amt_min) >= 0) {
         executeSubmitOrder(OrderCommand.SELL, amt_buy - amt_sell, lastTickBid, ts);
       }
-      if(!positiveSellOrder && Double.compare(SharedProps.round(amt_sell - inst_amt_min, inst_amt_scale), amt_buy) >= 0) {
+      if(!positiveSellOrder && Double.compare(SharedProps.round(amt_sell - amt_buy, inst_amt_scale), inst_amt_min) >= 0) {
         executeSubmitOrder(OrderCommand.BUY, amt_sell - amt_buy, lastTickAsk, ts);
       }
     }
@@ -1195,14 +1250,16 @@ public class PriceDeviationInstrument implements IStrategy {
       max = inst_offer_diff;
     } else {
       try {
-        for(ITick tick : history.getTicks(inst, tick_ts - 24 * 3600000, tick_ts)) {
+        long ms = configs.ticks_history_secs.get() * 1000;
+        for(ITick tick : history.getTicks(inst, tick_ts - ms, tick_ts)) {
           double v = tick.getAsk() - tick.getBid();
           if(Double.compare(max, v) < 0)
             max = v;
         }
         if(Double.compare(max, 0.0) > 0) {
           inst_offer_diff = max;
-          inst_offer_diff_ts = ((long)(tick_ts/3600000))*3600000 + 3600000;
+          ms = configs.ticks_history_ttl.get() * 1000;
+          inst_offer_diff_ts = ((long)(tick_ts/ms))*ms + ms;
         }
       } catch(Exception e) {
         max = inst_offer_diff;

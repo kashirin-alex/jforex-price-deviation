@@ -4,7 +4,6 @@ package strategies;
 
 import com.dukascopy.api.Instrument;
 import com.dukascopy.api.ICurrency;
-import com.dukascopy.api.Configurable;
 import com.dukascopy.api.Period;
 
 import java.io.BufferedReader;
@@ -72,15 +71,17 @@ public class StrategyConfigs {
     return insts;
   }
 
-  public AtomicBoolean debug             = new AtomicBoolean(false);
-  public AtomicBoolean trail_managed     = new AtomicBoolean(false);
-  public AtomicBoolean trail_at_one_side = new AtomicBoolean(false);
+  public AtomicBoolean debug               = new AtomicBoolean(false);
+  public AtomicBoolean trail_managed       = new AtomicBoolean(false);
+  public AtomicBoolean trail_at_one_side   = new AtomicBoolean(false);
+  public AtomicBoolean with_positive_flat  = new AtomicBoolean(true);
 
 
   public AtomicInteger slippage                 = new AtomicInteger(0);
   public AtomicInteger equity_gain_change_count = new AtomicInteger(3);
 
 
+  public AtomicLong timezone_offset                   = new AtomicLong(0);
   public AtomicLong execute_inst_ms                   = new AtomicLong(507);
   public AtomicLong execute_inst_delay_ms             = new AtomicLong(10000);
   public AtomicLong execute_inst_delay_init_ms        = new AtomicLong(10000);
@@ -88,6 +89,8 @@ public class StrategyConfigs {
   public AtomicLong execute_inst_skip_weekend_secs    = new AtomicLong(21600);
   public AtomicLong execute_inst_skip_day_end_secs    = new AtomicLong(10800);
   public AtomicLong execute_inst_skip_day_begin_secs  = new AtomicLong(7200);
+  public AtomicLong ticks_history_secs                = new AtomicLong(3600);
+  public AtomicLong ticks_history_ttl                 = new AtomicLong(1800);
 
   public AtomicLong cfg_file_change       = new AtomicLong(0);
   public AtomicLong cfg_ts                = new AtomicLong(0);
@@ -113,6 +116,7 @@ public class StrategyConfigs {
   public SyncDouble open_followup_step_muliplier            = new SyncDouble(25.0);
   public SyncDouble open_followup_require_growth_rate       = new SyncDouble(0.10);
   public SyncDouble open_followup_flat_amt_muliplier        = new SyncDouble(0.00);
+  public SyncDouble flat_positive_amt_ratio                 = new SyncDouble(1.00);
   public SyncDouble order_zero_base_step_multiplier         = new SyncDouble(0.00);
   public SyncDouble trail_step_1st_min                      = new SyncDouble(1.00);
   public SyncDouble trail_step_1st_divider                  = new SyncDouble(1.00);
@@ -174,6 +178,10 @@ public class StrategyConfigs {
             trail_at_one_side.set(config[1].equals("true"));
             SharedProps.print(config[0] + " set to: " + trail_at_one_side.get() );
             break;
+          case "with_positive_flat":
+            with_positive_flat.set(config[1].equals("true"));
+            SharedProps.print(config[0] + " set to: " + with_positive_flat.get() );
+            break;
 
 
           // int
@@ -184,6 +192,10 @@ public class StrategyConfigs {
 
 
           // long
+          case "timezone_offset":
+            timezone_offset.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + timezone_offset.get() );
+            break;
           case "execute_inst_ms":
             execute_inst_ms.set(Long.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + execute_inst_ms.get() );
@@ -207,6 +219,14 @@ public class StrategyConfigs {
           case "execute_inst_skip_day_begin_secs":
             execute_inst_skip_day_begin_secs.set(Long.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + execute_inst_skip_day_begin_secs.get() );
+            break;
+          case "ticks_history_secs":
+            ticks_history_secs.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + ticks_history_secs.get() );
+            break;
+          case "ticks_history_ttl":
+            ticks_history_ttl.set(Long.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + ticks_history_ttl.get() );
             break;
 
 
@@ -254,6 +274,10 @@ public class StrategyConfigs {
           case "open_followup_flat_amt_muliplier":
             open_followup_flat_amt_muliplier.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + open_followup_flat_amt_muliplier.get() );
+            break;
+          case "flat_positive_amt_ratio":
+            flat_positive_amt_ratio.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + flat_positive_amt_ratio.get() );
             break;
           case "order_zero_base_step_multiplier":
             order_zero_base_step_multiplier.set(Double.valueOf(config[1]));
@@ -310,7 +334,10 @@ public class StrategyConfigs {
     long delay = last_execution_ts.get() - ts;
     if(delay >= 0)
       return delay;
-    last_execution_ts.set(ts + execute_inst_delay_init_ms.get());
+    last_execution_ts.set(
+      ts +
+      (Double.compare(SharedProps.get_leverage_used(), 10.0) < 0 ? 1000 : execute_inst_delay_init_ms.get())
+    );
     return -1;
   }
 
