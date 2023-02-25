@@ -54,7 +54,6 @@ public class PriceDeviationInstrument implements IStrategy {
   private long            inst_exec_ts = 0;
   private double          inst_offer_diff = 0.0;
   private long            inst_offer_diff_ts = 0;
-  private boolean         inst_was_flat_positive = false;
 
   private ConcurrentHashMap<String, Double> orders_trailingstep = new ConcurrentHashMap<>();
 
@@ -460,9 +459,9 @@ public class PriceDeviationInstrument implements IStrategy {
         double neg_cost = getCommisionPip(neg, ts);
         double pos_amt = pos.getAmount() * inst_amt_ratio;
         double neg_amt = neg.getAmount() * inst_amt_ratio;
-        double require = ((neg.getAmount() / inst_amt_min) / (pos_amt/neg_amt)) * configs.merge_close_neg_side_growth_rate.get();
-        require += configs.merge_close_neg_side_multiplier.get();
         if(Double.compare(o_sl, 0.0) > 0) {
+          double require  = ((neg.getAmount() / amt_one) / (pos_amt/neg_amt)) * configs.merge_close_neg_side_growth_rate.get();
+          require += configs.merge_close_neg_side_multiplier.get();
           double pos_dif, neg_dif;
           double price;
           if(pos.getOrderCommand() == OrderCommand.BUY) {
@@ -499,29 +498,27 @@ public class PriceDeviationInstrument implements IStrategy {
             reach_mergable = true;
           }
         } else {
-          require *= step_1st_pip;
-          double pos_dif = pos.getProfitLossInPips() * pos_amt;
-          double neg_dif = Math.abs(neg.getProfitLossInPips()) * neg_amt;
-          double reach = (pos_dif - neg_dif) / (pos_amt - neg_amt);
-          reach_mergable = Double.compare(reach, require) >= 0;
-
-          pos_dif -= pos_cost;
-          neg_dif += neg_cost;
-          pos_dif -= Math.abs(pos_cost - neg_cost);
-          reach = (pos_dif - neg_dif) / (pos_amt - neg_amt);
-          boolean merge = Double.compare(reach, require) > 0;
+          double ratio = 1.0;// + ((neg_amt * (1.0 + configs.merge_close_neg_side_growth_rate.get())) / pos_amt);
+          double pos_dif = pos.getProfitLossInAccountCurrency() - Math.abs(pos.getCommission());
+          double neg_dif = ratio * (Math.abs(neg.getProfitLossInAccountCurrency()) + Math.abs(neg.getCommission()));
+          double require = offer_diff + ratio * (step_1st_pip * configs.merge_close_neg_side_multiplier.get());
+          double reach_pip = pos.getProfitLossInPips() - (Math.abs(getCommisionPip(pos, ts)) + Math.abs(getCommisionPip(neg, ts)));
+          reach_mergable = Double.compare(reach_pip, require) > 0 &&
+                           Double.compare(pos_dif * (1.0 - trail_step_rest_plus_gain/2), neg_dif) > 0;
+          double reach = pos_dif * (1.0 - (trail_step_rest_plus_gain * (4/3)));
+          boolean merge = reach_mergable && Double.compare(reach, neg_dif) > 0;
           if(merge || debug) {
             SharedProps.print(
               inst_str + " Merge " + (merge ? "" : "nominated ") + "on-side" +
-              " amt=" + SharedProps.round((pos_amt - neg_amt)/inst_amt_ratio, inst_amt_scale + 3) +
+              " ratio=" + SharedProps.round(ratio, 2) +
               " pos=" + SharedProps.round(pos_dif, 2) +
               " neg=" + SharedProps.round(neg_dif, 2) +
-              " reach=" + SharedProps.round(reach, 2) +
-              " require=" + SharedProps.round(require, 2) +
-              " @ " + pos.getProfitLossInAccountCurrency() + " > " + neg.getProfitLossInAccountCurrency()
+              " pip=" + SharedProps.round(require, 2) + "/" + SharedProps.round(reach_pip, 2) +
+              " reach=" + SharedProps.round(reach, 2)
             );
           }
           if(merge) {
+            //executeClose(neg, 0.0, 0, ts); // ? side's-margin
             mergeBuyOrders.add(neg);
             mergeBuyOrders.add(pos);
             orders.clear();
@@ -800,9 +797,7 @@ public class PriceDeviationInstrument implements IStrategy {
     Boolean do_buy =  orders_buy  < 1 && !positiveSellOrder;
     Boolean do_sell = orders_sell < 1 && !positiveBuyOrder;
 
-    if(orders.size() == 1) {
-      inst_was_flat_positive = false;
-    } else if((do_buy || do_sell) && orders.size() > 1) {
+    if(configs.with_positive_flat.get() && (positiveBuyOrder || positiveSellOrder) && orders.size() > 1) {
       IOrder bought;
       IOrder sold;
       if(orders.get(0).getOrderCommand() == OrderCommand.BUY) {
@@ -812,24 +807,41 @@ public class PriceDeviationInstrument implements IStrategy {
         bought = orders.get(1);
         sold = orders.get(0);
       }
-      if(inst_flat) {
-        inst_was_flat_positive = Double.compare(bought.getOpenPrice(), sold.getOpenPrice()) <= 0;
-      } else if(!inst_was_flat_positive && Double.compare(
-                  bought.getProfitLossInAccountCurrency() + sold.getProfitLossInAccountCurrency(),
-                  1.6 * (Math.abs(bought.getCommission()) + Math.abs(sold.getCommission())) ) > 0) {
-        do_buy = false;
-        do_sell = false;
-        positiveBuyOrder = false;
-        positiveSellOrder = false;
-        SharedProps.print(
-          inst_str + " Apply positive-flat" +
-          " bought:" + SharedProps.round(bought.getProfitLossInAccountCurrency(), 2) +
-          " sold:" + SharedProps.round(sold.getProfitLossInAccountCurrency(), 2) +
-          " above:" + SharedProps.round(Math.abs(bought.getCommission()) + Math.abs(sold.getCommission()), 2)
-        );
-      } else if(inst_was_flat_positive) {
-        buying_amt = inst_amt_min;
-        selling_amt = inst_amt_min;
+      IOrder pos;
+      IOrder neg;
+      if(Double.compare(bought.getProfitLossInAccountCurrency(), sold.getProfitLossInAccountCurrency()) > 0) {
+        pos = bought;
+        neg = sold;
+      } else {
+        pos = sold;
+        neg = bought;
+      }
+      if(Double.compare(pos.getProfitLossInAccountCurrency(), Math.abs(pos.getCommission())) > 0 &&
+         Double.compare(pos.getAmount() / neg.getAmount(), configs.flat_positive_amt_ratio.get()) >= 0) {
+        double pos_state = pos.getProfitLossInAccountCurrency();
+        pos_state *= configs.flat_positive_profit_part.get();
+        pos_state -= Math.abs(pos.getCommission());
+        double neg_state =  Math.abs(neg.getProfitLossInAccountCurrency());
+        neg_state += Math.abs(neg.getCommission()) * (1.0 + open_followup_flat_amt_muliplier);
+        neg_state += Math.abs(neg.getCommission()) / (neg.getAmount()/amt_one);
+        double need = neg_state - pos_state;
+        boolean reached = Double.compare(need, 0.0) < 0;
+
+        if(reached || (debug && Double.compare(pos.getProfitLossInAccountCurrency(), Math.abs(neg.getProfitLossInAccountCurrency())) > 0)) {
+          SharedProps.print(
+            inst_str + " Apply positive-flat " + (reached ? "" : "check ") + configs.account_currency +
+            " bought:" + SharedProps.round(bought.getProfitLossInAccountCurrency(), 2) +
+            " sold:" + SharedProps.round(sold.getProfitLossInAccountCurrency(), 2) +
+            " cost:" + SharedProps.round(Math.abs(bought.getCommission()) + Math.abs(sold.getCommission()), 2) + 
+            " need=" + SharedProps.round(need, 2)
+          );
+        }
+        if(reached) {
+          do_buy = false;
+          do_sell = false;
+          positiveBuyOrder = false;
+          positiveSellOrder = false;
+        }
       }
     }
 

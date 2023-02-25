@@ -117,6 +117,7 @@ public class StrategyConfigs {
   public SyncDouble open_followup_require_growth_rate       = new SyncDouble(0.10);
   public SyncDouble open_followup_flat_amt_muliplier        = new SyncDouble(0.00);
   public SyncDouble flat_positive_amt_ratio                 = new SyncDouble(1.00);
+  public SyncDouble flat_positive_profit_part               = new SyncDouble(0.80);
   public SyncDouble order_zero_base_step_multiplier         = new SyncDouble(0.00);
   public SyncDouble trail_step_1st_min                      = new SyncDouble(1.00);
   public SyncDouble trail_step_1st_divider                  = new SyncDouble(1.00);
@@ -278,6 +279,10 @@ public class StrategyConfigs {
           case "flat_positive_amt_ratio":
             flat_positive_amt_ratio.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + flat_positive_amt_ratio.get() );
+            break;
+          case "flat_positive_profit_part":
+            flat_positive_profit_part.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + flat_positive_profit_part.get() );
             break;
           case "order_zero_base_step_multiplier":
             order_zero_base_step_multiplier.set(Double.valueOf(config[1]));

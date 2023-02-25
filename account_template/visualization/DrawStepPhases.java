@@ -30,11 +30,11 @@ public class DrawStepPhases implements IStrategy {
   private JFUtils         utils;
 
   @Configurable("zero_base")
-  public double zero_base = 1.50;
+  public double zero_base = 0.50;
   @Configurable("trail_step_1st_min")
   public double trail_step_1st_min = 1.0;
   @Configurable("trail_step_1st_divider")
-  public double trail_step_1st_divider = 0.95;
+  public double trail_step_1st_divider = 2.00;
   @Configurable("open_followup_step_offers_diff_devider")
   public double open_followup_step_offers_diff_devider = 9.00;
   @Configurable("open_followup_require_growth_rate")
@@ -45,12 +45,12 @@ public class DrawStepPhases implements IStrategy {
   @Configurable("open_followup_step_muliplier")
   public double open_followup_step_muliplier = 10.00;
   @Configurable("trail_step_rest_plus_gain")
-  public double trail_step_rest_plus_gain = 0.20;
+  public double trail_step_rest_plus_gain = 0.33;
 
   @Configurable("ticks_history_secs")
-  public long ticks_history_secs = 3600;
+  public long ticks_history_secs = 1800;
   @Configurable("open_followup_step_first_muliplier")
-  public long ticks_history_ttl = 1800;
+  public long ticks_history_ttl = 300;
 
   private ConcurrentHashMap<String, Double> inst_offer_diff = new ConcurrentHashMap<>();
   private ConcurrentHashMap<String, Long> inst_offer_ts = new ConcurrentHashMap<>();
