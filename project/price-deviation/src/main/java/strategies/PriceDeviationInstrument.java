@@ -845,6 +845,16 @@ public class PriceDeviationInstrument implements IStrategy {
       }
     }
 
+    if(Double.compare(SharedProps.get_leverage_used(), configs.open_negative_at_leverage_above.get()) >= 0) {
+      do_buy = true;
+      do_sell = true;
+      positiveBuyOrder = false;
+      positiveSellOrder = false;
+      SharedProps.print(
+        inst_str + " open_negative_at_leverage_above leverage_used:" + SharedProps.round(SharedProps.get_leverage_used(), 2)
+      );
+    }
+
     if(do_buy || do_sell) {
 
       long check_ts = (inst_starts ? configs.delays_init_execution(ts) : (inst_exec_ts - ts));

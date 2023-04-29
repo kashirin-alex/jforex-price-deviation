@@ -116,6 +116,7 @@ public class StrategyConfigs {
   public SyncDouble open_followup_step_muliplier            = new SyncDouble(25.0);
   public SyncDouble open_followup_require_growth_rate       = new SyncDouble(0.10);
   public SyncDouble open_followup_flat_amt_muliplier        = new SyncDouble(0.00);
+  public SyncDouble open_negative_at_leverage_above         = new SyncDouble(110.00);
   public SyncDouble flat_positive_amt_ratio                 = new SyncDouble(1.00);
   public SyncDouble flat_positive_profit_part               = new SyncDouble(0.80);
   public SyncDouble order_zero_base_step_multiplier         = new SyncDouble(0.00);
@@ -271,6 +272,10 @@ public class StrategyConfigs {
           case "open_followup_require_growth_rate":
             open_followup_require_growth_rate.set(Double.valueOf(config[1]));
             SharedProps.print(config[0] + " set to: " + open_followup_require_growth_rate.get() );
+            break;
+          case "open_negative_at_leverage_above":
+            open_negative_at_leverage_above.set(Double.valueOf(config[1]));
+            SharedProps.print(config[0] + " set to: " + open_negative_at_leverage_above.get() );
             break;
           case "open_followup_flat_amt_muliplier":
             open_followup_flat_amt_muliplier.set(Double.valueOf(config[1]));
